@@ -187,6 +187,8 @@ class Perfil(NamedTuple):
     natureza: tuple
     heuristicas_tipo: tuple      # ((palavras-chave...), tipo_fonte) p/ triagem
     heuristicas_conteudo: tuple = ()   # (regex, tipo_fonte, peso) sobre o TEXTO
+    pastas_publicacao: dict = {}       # tipo funcional → pasta no vault
+    pastas_por_area: tuple = ()        # pastas que subdividem por área
 
 
 PERFIS = {
@@ -302,6 +304,20 @@ PERFIS = {
             (r"EXCELENT[ÍI]SSIMO|Nestes\s+termos,?\s+pede\s+deferimento",
              "peca_interna", 2),
         ),
+        # Roteamento da publicação (Fase 5): tipo funcional → pasta do vault.
+        # Documento interno (abnt=False) vai SEMPRE para 04-Modelos-Internos,
+        # independente do tipo — o publicar.py aplica essa exceção.
+        pastas_publicacao={
+            "Doutrina": "01-Doutrina",
+            "Artigo": "01-Doutrina",
+            "Legislação": "02-Legislacao",
+            "Jurisprudência": "03-Jurisprudencia",
+            "Súmula": "03-Jurisprudencia",
+            "Parecer": "02-Legislacao",
+            "Modelo": "04-Modelos-Internos",
+        },
+        # 01-Doutrina subdivide por área (WORKFLOW Fase 5: "01-Doutrina/ (por área)")
+        pastas_por_area=("01-Doutrina",),
     ),
 }
 
@@ -330,6 +346,8 @@ STATUS = PERFIL_ATIVO.status
 NATUREZA = PERFIL_ATIVO.natureza
 HEURISTICAS_TIPO = PERFIL_ATIVO.heuristicas_tipo
 HEURISTICAS_CONTEUDO = PERFIL_ATIVO.heuristicas_conteudo
+PASTAS_PUBLICACAO = PERFIL_ATIVO.pastas_publicacao
+PASTAS_POR_AREA = PERFIL_ATIVO.pastas_por_area
 FONTES_POR_TIPO = _inverter(TIPOS_POR_FONTE)
 AREA_POR_CODIGO = _inverter(CODIGO_AREA)
 TIPO_POR_CODIGO = _inverter(CODIGO_TIPO)
@@ -449,6 +467,13 @@ def _autoteste():
         for tf, tipos in p.tipos_por_fonte.items():
             for t in tipos:
                 ok(t in p.tipos, f"[{nome}] {tf} → tipo fora do eixo: {t}")
+        # publicação: toda pasta mapeada cobre exatamente os tipos do perfil
+        if p.pastas_publicacao:
+            ok(set(p.pastas_publicacao) == set(p.tipos),
+               f"[{nome}] pastas_publicacao não cobre exatamente os tipos")
+            for pasta in p.pastas_por_area:
+                ok(pasta in p.pastas_publicacao.values(),
+                   f"[{nome}] pastas_por_area cita pasta inexistente: {pasta}")
         # códigos cobrem os vocabulários e são únicos
         areas_canonicas = set(p.areas.values())
         ok(set(p.codigo_area) == areas_canonicas,

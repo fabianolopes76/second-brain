@@ -46,7 +46,14 @@
       "Bash(python3 normalizar_yaml.py corpus --dry)",
       "Bash(python3 auditar_vault.py corpus-vault --detalhado)",
       "Bash(echo \"rc=$?\")",
-      "Bash(git commit -q -m 'remove artefato de auditoria versionado por engano em corpus/ *)"
+      "Bash(git commit -q -m 'remove artefato de auditoria versionado por engano em corpus/ *)",
+      "Bash(python3 -m py_compile publicar.py)",
+      "Bash(python3 fatiar.py corpus/16_livro_fatiavel.md -o /tmp/pub/3-MARKDOWN-LIMPO --min-palavras 500)",
+      "Bash(python3 publicar.py /tmp/pub/3-MARKDOWN-LIMPO /tmp/pub/4-OBSIDIAN-VAULT --dry)",
+      "Bash(python3 publicar.py /tmp/pub/3-MARKDOWN-LIMPO /tmp/pub/4-OBSIDIAN-VAULT)",
+      "Bash(python3 publicar.py /tmp/pub/3-MARKDOWN-LIMPO /tmp/pub/4-OBSIDIAN-VAULT --force)",
+      "Bash(python3 auditar_vault.py /tmp/pub/4-OBSIDIAN-VAULT)",
+      "Bash(cp -p taxonomia.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)"
     ]
   }
 }
