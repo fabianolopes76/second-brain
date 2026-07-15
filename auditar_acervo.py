@@ -30,32 +30,18 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Requisitos por tipo de fonte (espelham ESQUEMA_YAML_ABNT.md)
-# ---------------------------------------------------------------------------
-EXIGE_ANCORA = {
-    "livro", "livro_ebook_online", "livro_ebook_leitor",
-    "capitulo_livro", "artigo_periodico", "trabalho_academico", "evento",
-}
-CAMPOS_ABNT = {
-    "livro": ["autoria", "titulo", "local_publicacao", "editora", "ano"],
-    "livro_ebook_online": ["autoria", "titulo", "editora", "ano", "url"],
-    "livro_ebook_leitor": ["autoria", "titulo", "editora", "ano"],
-    "capitulo_livro": ["autoria", "titulo", "titulo_todo", "editora", "ano",
-                       "pagina_inicio", "pagina_fim"],
-    "artigo_periodico": ["autoria", "titulo", "titulo_periodico",
-                         "pagina_inicio", "pagina_fim", "ano"],
-    "trabalho_academico": ["autoria", "titulo", "grau", "instituicao", "ano"],
-    "evento": ["autoria", "titulo", "nome_evento", "ano"],
-    "legislacao": ["autoria", "norma_numero", "norma_data", "ementa", "ano"],
-    "jurisprudencia": ["orgao", "numero_processo", "relator", "data_julgamento"],
-    "ato_administrativo": ["orgao_emissor", "especie_ato", "numero_ato", "data_ato"],
-    "documento_online": ["titulo", "url", "data_acesso", "ano"],
-}
-IDIOMAS = {"por", "eng", "deu", "fra", "ita", "spa"}
+import frontmatter
+import taxonomia
 
-ANC_PAG = re.compile(r"\{\{p\.[0-9ivxlcdm]+\}\}|<!--\s*p\.[0-9ivxlcdm]+\s*-->", re.I)
-ANC_POS = re.compile(r"\{\{loc\.\d+\}\}", re.I)
+# ---------------------------------------------------------------------------
+# Vocabulário — fonte única: taxonomia.py. O que BLOQUEIA (erro) é
+# campos_bloqueantes(); a dívida de migração (TOLERADOS) vira aviso.
+# ---------------------------------------------------------------------------
+EXIGE_ANCORA = {t for t, r in taxonomia.TIPOS_FONTE.items() if r.exige_ancora}
+IDIOMAS = set(taxonomia.IDIOMAS)
+
+ANC_PAG = taxonomia.ANCORA_PAG
+ANC_POS = taxonomia.ANCORA_POS
 
 # Alvo de fatia: ~1.500 tokens ≈ 1.100 palavras. Acima de ~4.000 palavras o
 # arquivo já pesa no contexto e atrapalha a recuperação.
@@ -64,69 +50,9 @@ PALAVRAS_GRAVE = 12000
 
 
 def ler_frontmatter(texto):
-    """Parser de frontmatter que entende os blocos dobrados do YAML.
-
-    BUG CORRIGIDO: 'referencia_abnt: >' seguido de linhas indentadas é a forma
-    natural (e legível) de escrever textos longos em YAML. O parser antigo lia o
-    valor como literalmente ">", e a referência/resumo se perdiam.
-    Agora suporta '>' (dobrado, junta linhas) e '|' (literal, preserva quebras).
-    """
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", texto, re.DOTALL)
-    if not m:
-        return {}, texto
-    linhas = m.group(1).splitlines()
-    dados, i = {}, 0
-    while i < len(linhas):
-        linha = linhas[i]
-        if not linha.strip() or linha.strip().startswith("#") or ":" not in linha:
-            i += 1
-            continue
-        chave, _, valor = linha.partition(":")
-        chave = chave.strip()
-        valor = valor.split(" #")[0].strip()
-
-        # bloco dobrado (>) ou literal (|): o valor vem nas linhas indentadas
-        if valor in (">", "|", ">-", "|-", ">+", "|+"):
-            corpo, i = [], i + 1
-            while i < len(linhas) and (not linhas[i].strip()
-                                       or linhas[i][:1] in (" ", "\t")):
-                corpo.append(linhas[i].strip())
-                i += 1
-            sep = " " if valor.startswith(">") else "\n"
-            dados[chave] = sep.join(c for c in corpo if c).strip()
-            continue
-
-        # lista em várias linhas:  tags:\n  [\n   "a",\n   "b",\n  ]
-        if valor == "" and i + 1 < len(linhas) and linhas[i + 1].strip().startswith("["):
-            bloco, i = "", i + 1
-            while i < len(linhas):
-                bloco += linhas[i].strip()
-                if "]" in linhas[i]:
-                    i += 1
-                    break
-                i += 1
-            itens = re.findall(r'"([^"]*)"|\'([^\']*)\'', bloco)
-            dados[chave] = [a or b for a, b in itens]
-            continue
-
-        # lista em linha:  area: [Tributário, Civil]
-        if valor.startswith("[") and valor.endswith("]"):
-            interno = valor[1:-1].strip()
-            citados = re.findall(r'"([^"]*)"|\'([^\']*)\'', interno)
-            dados[chave] = ([a or b for a, b in citados] if citados
-                            else [x.strip() for x in interno.split(",") if x.strip()])
-            i += 1
-            continue
-
-        valor = valor.strip('"').strip("'")
-        if valor.lower() in ("true", "false"):
-            dados[chave] = valor.lower() == "true"
-        elif valor.lower() in ("", "null", "~"):
-            dados[chave] = None
-        else:
-            dados[chave] = valor
-        i += 1
-    return dados, texto[m.end():]
+    """Parser único do pipeline — ver frontmatter.py."""
+    fm = frontmatter.ler(texto)
+    return fm.campos, fm.corpo
 
 
 def vazio(v):
@@ -178,7 +104,7 @@ def auditar(caminho: Path):
     if vazio(tf):
         r["erros"].append("tipo_fonte ausente — sem ele não se sabe como citar")
         tf = None
-    elif tf not in CAMPOS_ABNT:
+    elif tf not in taxonomia.TIPOS_FONTE:
         r["erros"].append(f"tipo_fonte inválido: '{tf}'")
         tf = None
     else:
@@ -230,13 +156,21 @@ def auditar(caminho: Path):
             r["avisos"].append("sem pagina_inicio/pagina_fim no YAML da fatia")
     else:
         if tf:
-            faltam = [c for c in CAMPOS_ABNT[tf] if vazio(fm.get(c))]
+            # O que BLOQUEIA (erro) vem de campos_bloqueantes; a dívida de
+            # migração (TOLERADOS na taxonomia) vira aviso até o backlog zerar.
+            faltam = [c for c in taxonomia.campos_bloqueantes(tf) if vazio(fm.get(c))]
             if faltam:
                 r["erros"].append(f"campos ABNT vazios: {', '.join(faltam)}")
             else:
                 r["ok"].append("campos ABNT completos")
+            devidos = [c for c in taxonomia.campos_tolerados(tf) if vazio(fm.get(c))]
+            if devidos:
+                r["avisos"].append("dívida de migração ABNT — preencher: "
+                                   + ", ".join(devidos))
 
-        if vazio(fm.get("referencia_abnt")):
+        if tf and not taxonomia.eh_abnt(tf):
+            r["ok"].append("documento interno — fora do regime ABNT (sem referência)")
+        elif vazio(fm.get("referencia_abnt")):
             r["erros"].append("referencia_abnt vazia — sem ela não se monta a nota de rodapé")
         else:
             r["ok"].append("referência ABNT presente")

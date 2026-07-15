@@ -19,7 +19,10 @@
       "Bash(python3 -m py_compile injetar_paginas.py)",
       "Bash(cp -p injetar_paginas.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
       "Bash(git commit -q -m 'injetar_paginas.py: localizador vem da taxonomia; fim do default perigoso *)",
-      "Bash(python3 validar_yaml_abnt.py corpus)"
+      "Bash(python3 validar_yaml_abnt.py corpus)",
+      "Bash(git commit *)",
+      "Bash(python3 -m py_compile auditar_acervo.py)",
+      "Bash(python3 auditar_acervo.py corpus --detalhado --relatorio /tmp/novo-aud.md)"
     ]
   }
 }
