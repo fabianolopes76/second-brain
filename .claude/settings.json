@@ -22,7 +22,10 @@
       "Bash(python3 validar_yaml_abnt.py corpus)",
       "Bash(git commit *)",
       "Bash(python3 -m py_compile auditar_acervo.py)",
-      "Bash(python3 auditar_acervo.py corpus --detalhado --relatorio /tmp/novo-aud.md)"
+      "Bash(python3 auditar_acervo.py corpus --detalhado --relatorio /tmp/novo-aud.md)",
+      "Bash(python3 -m py_compile fatiar.py)",
+      "Bash(python3 fatiar.py corpus -o /tmp/novo-fatias --min-palavras 500)",
+      "Bash(cp -r /tmp/novo-fatias /tmp/ouro-fatias)"
     ]
   }
 }

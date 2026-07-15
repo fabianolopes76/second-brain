@@ -30,6 +30,8 @@ import re
 import sys
 from pathlib import Path
 
+import frontmatter
+
 ANCORA = re.compile(r"\{\{p\.([0-9ivxlcdm]+)\}\}", re.I)
 TITULO = re.compile(r"^(#{1,4})\s+(.+)$")
 
@@ -39,16 +41,27 @@ MIN_PALAVRAS_FATIAR = 4000  # abaixo disso, não vale fatiar
 
 
 def ler_frontmatter(texto):
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", texto, re.DOTALL)
-    if not m:
-        return {}, texto, ""
-    bruto = m.group(1)
-    d = {}
-    for linha in bruto.splitlines():
-        if ":" in linha and not linha.strip().startswith("#"):
-            k, _, v = linha.partition(":")
-            d[k.strip()] = v.split(" #")[0].strip().strip('"').strip("'")
-    return d, texto[m.end():], bruto
+    """Parser único do pipeline — ver frontmatter.py.
+
+    O parser antigo (1 linha por campo) destruía listas e blocos: `area:` em
+    bloco multi-linha era lida como vazia e SUMIA da fatia — que ficava
+    invisível nos MOCs do Obsidian (filtram por contains(area, ...)).
+    """
+    fm = frontmatter.ler(texto)
+    return fm.campos, fm.corpo, fm.bruto
+
+
+_LINHA_PARTE = re.compile(r"^\s*(parte|partes)\s*:", re.I)
+
+
+def _bruto_sem_parte(bruto: str) -> str:
+    """Remove `parte:`/`partes:` do frontmatter herdado pela nota-índice.
+
+    Sem isso: (a) refatiar um arquivo que já tem `partes:` duplicava a chave;
+    (b) fatiar uma fatia (que tem `parte:`) contaminava o índice — e o filtro
+    `!parte` dos MOCs ESCONDERIA a nota-índice inteira do segundo cérebro.
+    """
+    return "\n".join(l for l in bruto.splitlines() if not _LINHA_PARTE.match(l))
 
 
 def blocos(corpo):
@@ -154,14 +167,16 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
         n_anc_fat += len(ANCORA.findall(f))
         nome = f"{prefixo}_p{i:02d}.md"
 
+        # Todo valor parseado passa pelo serializador — interpolar em f-string
+        # emitia repr de Python p/ listas e quebrava o YAML com aspas no título.
         cab = ["---",
-               f'titulo: "{fm.get("titulo", arq.stem)} — {tit}"',
+               frontmatter.emitir("titulo", f'{fm.get("titulo", arq.stem)} — {tit}'),
                f'obra: "[[{prefixo}_INDICE]]"',
                f"parte: {i:02d}"]
-        for campo in ("area", "tipo_fonte", "idioma", "autoria_citacao",
+        for campo in ("area", "tipo", "tipo_fonte", "idioma", "autoria_citacao",
                       "ano", "localizador_abrev", "status"):
             if fm.get(campo):
-                cab.append(f"{campo}: {fm[campo]}")
+                cab.append(frontmatter.emitir(campo, fm[campo]))
         if p_ini:
             cab += [f"pagina_inicio: {p_ini}", f"pagina_fim: {p_fim}"]
         cab.append("---")
@@ -187,7 +202,7 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
 
     # ---- nota-índice (camada 1) ----
     idx = ["---"]
-    idx.append(fm_bruto if fm_bruto else "")
+    idx.append(_bruto_sem_parte(fm_bruto) if fm_bruto else "")
     idx.append(f"partes: {len(fatias)}")
     idx.append("---\n")
     idx.append(f"# {fm.get('titulo', arq.stem)}\n")
