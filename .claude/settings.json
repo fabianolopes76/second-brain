@@ -45,7 +45,8 @@
       "Bash(python3 -m py_compile normalizar_yaml.py)",
       "Bash(python3 normalizar_yaml.py corpus --dry)",
       "Bash(python3 auditar_vault.py corpus-vault --detalhado)",
-      "Bash(echo \"rc=$?\")"
+      "Bash(echo \"rc=$?\")",
+      "Bash(git commit -q -m 'remove artefato de auditoria versionado por engano em corpus/ *)"
     ]
   }
 }
