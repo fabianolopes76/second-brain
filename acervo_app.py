@@ -196,7 +196,7 @@ def diagnostico():
     # scripts
     for s in ["aplicar_ocr.sh", "injetar_paginas.py", "verificar_ancoras.py",
               "validar_yaml_abnt.py", "taxonomia.py", "frontmatter.py",
-              "triagem.py", "auditar_vault.py"]:
+              "triagem.py", "auditar_vault.py", "publicar.py"]:
         p = Path(CFG["scripts"]) / s
         itens.append({"nome": f"script {s}", "ok": p.exists(),
                       "dica": "" if p.exists() else f"não encontrado em {CFG['scripts']}"})
@@ -336,14 +336,41 @@ def progresso():
             r["auditado"] = True
             break
 
+    r["limpo_md"] = 0
+    if limpo.is_dir():
+        r["limpo_md"] = sum(1 for f in limpo.rglob("*.md")
+                            if not f.name.startswith(("RELATORIO", "_")))
+
     vault = base / "4-OBSIDIAN-VAULT"
+    r["publicado"] = False
     if vault.is_dir():
         # mesmo critério do auditar_vault.py: templates/radar não são notas
         _fora = {"99-Templates", "Radar", ".obsidian", ".trash"}
         r["vault"] = sum(1 for f in vault.rglob("*.md")
                          if not f.name.startswith(("RELATORIO", "_"))
                          and not any(p in _fora for p in f.parts))
+        r["publicado"] = (vault / "RELATORIO-PUBLICACAO.md").exists()
         r["vault_auditado"] = (vault / "RELATORIO-VAULT.md").exists()
+
+    # Carimbos de data das etapas concluídas (derivados do disco, como tudo).
+    def _mt(p):
+        try:
+            return time.strftime("%d/%m %H:%M", time.localtime(p.stat().st_mtime))
+        except OSError:
+            return ""
+    r["datas"] = {}
+    if r["csv"]:
+        r["datas"]["csv"] = _mt(base / "controle.csv")
+    for nome, arq in (("auditado", "RELATORIO-AUDITORIA.md"),):
+        for pasta in (bruto, limpo, base):
+            if (pasta / arq).exists():
+                r["datas"][nome] = _mt(pasta / arq)
+                break
+    if vault.is_dir():
+        if r["publicado"]:
+            r["datas"]["publicado"] = _mt(vault / "RELATORIO-PUBLICACAO.md")
+        if r["vault_auditado"]:
+            r["datas"]["vault_auditado"] = _mt(vault / "RELATORIO-VAULT.md")
     return r
 
 
@@ -590,6 +617,24 @@ def acao_validar():
     return JOB.start("Validação (âncoras + YAML)", cmd)
 
 
+def acao_publicar(pasta="", dry=True, force=False):
+    """FASE 5 determinística: distribui 3-MARKDOWN-LIMPO no vault por regra
+    (tipo→pasta do perfil), com trava de validação e vault vencendo conflito."""
+    origem = Path(CFG["root"]) / "3-MARKDOWN-LIMPO"
+    if not origem.is_dir():
+        return False, ("Pasta 3-MARKDOWN-LIMPO não existe — o que se publica "
+                       "é o produto FINAL (Fases 3-4). Fatie/valide antes.")
+    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "4-OBSIDIAN-VAULT")
+    pub = Path(CFG["scripts"]) / "publicar.py"
+    if not pub.exists():
+        return False, "publicar.py não encontrado na pasta de scripts."
+    flags = (" --dry" if dry else "") + (" --force" if force else "")
+    cmd = (f'python3 {shlex.quote(str(pub))} {shlex.quote(str(origem))} '
+           f'{shlex.quote(str(alvo))}{flags}')
+    nome = "Publicar (dry-run)" if dry else "Publicar no vault"
+    return JOB.start(nome, cmd)
+
+
 def acao_auditar_vault(pasta=""):
     """Audita o GRAFO do vault: fatias órfãs, partes inconsistentes, wikilinks
     quebrados, vocabulário que esconde notas dos painéis, áreas sem MOC."""
@@ -735,6 +780,10 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = acao_auditar(data.get("pasta", ""))
             elif a == "validar":
                 ok, msg = acao_validar()
+            elif a == "publicar":
+                ok, msg = acao_publicar(data.get("pasta", ""),
+                                        dry=bool(data.get("dry", True)),
+                                        force=bool(data.get("force", False)))
             elif a == "auditar_vault":
                 ok, msg = acao_auditar_vault(data.get("pasta", ""))
             else:
@@ -1160,16 +1209,34 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">8</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Auditar vault</h3>
-          <span class="desc">O <b>grafo</b> está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs.</span>
+          <h3>Publicar</h3>
+          <span class="desc">Distribui <b>3-MARKDOWN-LIMPO</b> no vault por regra (tipo→pasta). Nota reprovada não entra; em conflito, o vault vence.</span>
           <span class="st" id="s8">—</span>
           <div class="acoes">
             <button class="bnav" onclick="abrirNav('vaultp','dir')">📁</button>
-            <button data-a class="primary" onclick="acao('auditar_vault',{pasta:vaultp.value})">Auditar vault</button>
+            <button data-a onclick="acao('publicar',{pasta:vaultp.value,dry:true})">Simular</button>
+            <button data-a class="primary" onclick="acao('publicar',{pasta:vaultp.value,dry:false})">Publicar</button>
           </div>
         </div>
         <div class="extra">
           <input type="text" id="vaultp" placeholder="(padrão: 4-OBSIDIAN-VAULT)">
+          <div class="dica"><b>Simule primeiro.</b> Publicar é COPIAR — o 3-MARKDOWN-LIMPO segue como estágio de trabalho. Se uma nota do vault foi editada à mão (curadoria), ela <b>não</b> é sobrescrita. Relatório: <b>RELATORIO-PUBLICACAO.md</b>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="et" id="e9">
+      <div class="bar"><div class="dot">9</div><div class="linha"></div></div>
+      <div class="conteudo">
+        <div class="topo">
+          <h3>Auditar vault</h3>
+          <span class="desc">O <b>grafo</b> está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs.</span>
+          <span class="st" id="s9">—</span>
+          <div class="acoes">
+            <button data-a class="primary" onclick="acao('auditar_vault',{pasta:vaultp.value})">Auditar vault</button>
+          </div>
+        </div>
+        <div class="extra">
           <div class="dica">Metadado fora do vocabulário não gera erro no Obsidian — a nota simplesmente <b>some dos painéis</b>. Esta auditoria torna esse silêncio visível. Relatório: <b>RELATORIO-VAULT.md</b> no vault.</div>
         </div>
       </div>
@@ -1446,7 +1513,20 @@ async function salvar(campos){
   estado();
 }
 function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acervo'}); }
+/* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
+   sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
+const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
+                       fatiar:'e5', validar:'e6', auditar:'e7',
+                       publicar:'e8', auditar_vault:'e9'};
 async function acao(a,extra){
+  const et = document.getElementById(ETAPA_DA_ACAO[a]||'');
+  const ehDry = extra && extra.dry === true;
+  if(et && et.className.includes('feito') && !ehDry){
+    const st = document.getElementById('s'+ETAPA_DA_ACAO[a].slice(1));
+    if(!confirm('Esta etapa já foi concluída ('+(st?st.textContent:'')+').\n'+
+                'Reexecutar vai reprocessar e pode sobrescrever o resultado.\n\n'+
+                'Continuar mesmo assim?')) return;
+  }
   const r = await fetch('/api/acao',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(Object.assign({acao:a},extra||{}))});
   const j = await r.json();
@@ -1464,11 +1544,12 @@ function marcar(id, estadoEt, texto, classe){
 }
 function atualizarTrilho(p, temRoot){
   if(!temRoot){
-    for(let i=1;i<=8;i++) marcar('e'+i,'bloq','defina a pasta','');
+    for(let i=1;i<=9;i++) marcar('e'+i,'bloq','defina a pasta','');
     return;
   }
+  const dt = (k) => (p.datas && p.datas[k]) ? ' · '+p.datas[k] : '';
   // 1 triagem
-  p.csv ? marcar('e1','feito', p.csv+' arquivos', 'ok')
+  p.csv ? marcar('e1','feito', p.csv+' arquivos'+dt('csv'), 'ok')
         : marcar('e1','ativa','pendente','pend');
   // 2 OCR
   if(!p.csv)            marcar('e2','bloq','faça a triagem','');
@@ -1491,12 +1572,16 @@ function atualizarTrilho(p, temRoot){
   else                  marcar('e6','ativa','pronto','');
   // 7 auditar
   if(!p.bruto)          marcar('e7','bloq','converta antes','');
-  else if(p.auditado)   marcar('e7','feito','relatório gerado','ok');
+  else if(p.auditado)   marcar('e7','feito','relatório gerado'+dt('auditado'),'ok');
   else                  marcar('e7','ativa','pronto','pend');
-  // 8 auditar vault (grafo)
-  if(!p.vault)              marcar('e8','bloq','publique o vault antes','');
-  else if(p.vault_auditado) marcar('e8','feito', p.vault+' notas · relatório ok','ok');
-  else                      marcar('e8','ativa', p.vault+' notas no vault','pend');
+  // 8 publicar (Fase 5 determinística)
+  if(!p.limpo_md)       marcar('e8','bloq','prepare 3-MARKDOWN-LIMPO','');
+  else if(p.publicado)  marcar('e8','feito', p.vault+' notas'+dt('publicado'),'ok');
+  else                  marcar('e8','ativa', p.limpo_md+' prontos p/ publicar','pend');
+  // 9 auditar vault (grafo)
+  if(!p.vault)              marcar('e9','bloq','publique o vault antes','');
+  else if(p.vault_auditado) marcar('e9','feito','grafo auditado'+dt('vault_auditado'),'ok');
+  else                      marcar('e9','ativa', p.vault+' notas no vault','pend');
 }
 
 /* ---------- estado ---------- */
