@@ -195,6 +195,9 @@ class Perfil(NamedTuple):
     status_pendencia: tuple = ()       # exige revisão humana
     status_superado: tuple = ()        # não citar sem cautela
     moc_grupos: tuple = ()             # ((título do painel, (tipos...)), ...)
+    # Radar: como reconhecer, num texto, os identificadores que ligam um
+    # achado de monitoramento às notas do vault (grupo 1 = o número).
+    padroes_identificador: tuple = ()  # ((rotulo, regex), ...)
 
 
 PERFIS = {
@@ -332,6 +335,17 @@ PERFIS = {
             ("⚖️ Jurisprudência e precedentes", ("Jurisprudência", "Súmula")),
             ("📜 Legislação", ("Legislação", "Parecer")),
         ),
+        # O que liga um achado do radar às notas do acervo: números de norma,
+        # temas de repetitivos, súmulas e nº de processo (formato CNJ).
+        padroes_identificador=(
+            ("lei", r"\blei(?:\s+complementar)?\s*(?:n[ºo°.]{0,2})?\s*([\d][\d.]{2,9})"),
+            ("decreto", r"\bdecreto(?:-lei)?\s*(?:n[ºo°.]{0,2})?\s*([\d][\d.]{2,9})"),
+            ("mp", r"\bmedida\s+provis[óo]ria\s*(?:n[ºo°.]{0,2})?\s*([\d][\d.]{1,9})"),
+            ("emenda", r"\bemenda\s+constitucional\s*(?:n[ºo°.]{0,2})?\s*(\d{1,3})"),
+            ("tema", r"\btema\s*(?:repetitivo\s*)?(?:n[ºo°.]{0,2})?\s*(\d{1,5})"),
+            ("sumula", r"\bs[úu]mula\s*(?:vinculante\s*)?(?:n[ºo°.]{0,2})?\s*(\d{1,4})"),
+            ("processo", r"(\d{7}-?\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})"),
+        ),
     ),
 }
 
@@ -361,6 +375,7 @@ NATUREZA = PERFIL_ATIVO.natureza
 HEURISTICAS_TIPO = PERFIL_ATIVO.heuristicas_tipo
 HEURISTICAS_CONTEUDO = PERFIL_ATIVO.heuristicas_conteudo
 PASTAS_PUBLICACAO = PERFIL_ATIVO.pastas_publicacao
+PADROES_IDENTIFICADOR = PERFIL_ATIVO.padroes_identificador
 PASTAS_POR_AREA = PERFIL_ATIVO.pastas_por_area
 FONTES_POR_TIPO = _inverter(TIPOS_POR_FONTE)
 AREA_POR_CODIGO = _inverter(CODIGO_AREA)
@@ -496,6 +511,13 @@ def _autoteste():
         for titulo_g, tipos_g in p.moc_grupos:
             for t in tipos_g:
                 ok(t in p.tipos, f"[{nome}] moc_grupos com tipo fora do eixo: {t}")
+        # radar: regexes compilam e têm exatamente 1 grupo de captura
+        for rotulo, rx in p.padroes_identificador:
+            try:
+                ok(re.compile(rx, re.I).groups == 1,
+                   f"[{nome}] padrão '{rotulo}' deve ter exatamente 1 grupo")
+            except re.error:
+                ok(False, f"[{nome}] regex inválida em '{rotulo}': {rx}")
         # códigos cobrem os vocabulários e são únicos
         areas_canonicas = set(p.areas.values())
         ok(set(p.codigo_area) == areas_canonicas,

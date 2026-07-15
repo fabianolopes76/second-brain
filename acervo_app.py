@@ -196,7 +196,7 @@ def diagnostico():
     # scripts
     for s in ["aplicar_ocr.sh", "injetar_paginas.py", "verificar_ancoras.py",
               "validar_yaml_abnt.py", "taxonomia.py", "frontmatter.py",
-              "triagem.py", "auditar_vault.py", "publicar.py"]:
+              "triagem.py", "auditar_vault.py", "publicar.py", "radar.py"]:
         p = Path(CFG["scripts"]) / s
         itens.append({"nome": f"script {s}", "ok": p.exists(),
                       "dica": "" if p.exists() else f"não encontrado em {CFG['scripts']}"})
@@ -308,7 +308,8 @@ def listar_pasta(caminho: str, modo: str = "dir"):
 def progresso():
     """Em que ponto do workflow o acervo está? Guia a UI e libera os passos."""
     r = {"pdfs": 0, "csv": 0, "ocr_pend": 0, "bruto": 0, "limpo": 0,
-         "fatias": 0, "auditado": False, "vault": 0, "vault_auditado": False}
+         "fatias": 0, "auditado": False, "vault": 0, "vault_auditado": False,
+         "radar": 0, "radar_novos": 0}
     if not CFG["root"] or not Path(CFG["root"]).is_dir():
         return r
     base = Path(CFG["root"])
@@ -351,6 +352,19 @@ def progresso():
                          and not any(p in _fora for p in f.parts))
         r["publicado"] = (vault / "RELATORIO-PUBLICACAO.md").exists()
         r["vault_auditado"] = (vault / "RELATORIO-VAULT.md").exists()
+        radar_dir = vault / "00-Indices-MOCs" / "Radar"
+        if radar_dir.is_dir():
+            achados = [f for f in radar_dir.rglob("*.md")
+                       if not f.name.startswith(("RELATORIO", "_", "."))]
+            r["radar"] = len(achados)
+            try:
+                estado_radar = json.loads(
+                    (radar_dir / ".radar_estado.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                estado_radar = {}
+            r["radar_novos"] = sum(
+                1 for f in achados
+                if estado_radar.get(str(f.relative_to(radar_dir))) is None)
 
     # Carimbos de data das etapas concluídas (derivados do disco, como tudo).
     def _mt(p):
@@ -371,6 +385,8 @@ def progresso():
             r["datas"]["publicado"] = _mt(vault / "RELATORIO-PUBLICACAO.md")
         if r["vault_auditado"]:
             r["datas"]["vault_auditado"] = _mt(vault / "RELATORIO-VAULT.md")
+        if (vault / "RELATORIO-RADAR.md").exists():
+            r["datas"]["radar"] = _mt(vault / "RELATORIO-RADAR.md")
     return r
 
 
@@ -635,6 +651,22 @@ def acao_publicar(pasta="", dry=True, force=False):
     return JOB.start(nome, cmd)
 
 
+def acao_radar(pasta="", aplicar=False):
+    """FASE 6: correlaciona os achados de Radar/ às notas do vault por
+    identificador (lei/tema/súmula/processo) e monta a fila de revisão.
+    Com aplicar=True, sinaliza as afetadas com status: A-conferir."""
+    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "4-OBSIDIAN-VAULT")
+    if not alvo.is_dir():
+        return False, f"Pasta do vault não encontrada: {alvo}."
+    rd = Path(CFG["scripts"]) / "radar.py"
+    if not rd.exists():
+        return False, "radar.py não encontrado na pasta de scripts."
+    cmd = (f'python3 {shlex.quote(str(rd))} {shlex.quote(str(alvo))}'
+           + (" --aplicar" if aplicar else ""))
+    nome = "Radar (sinalizar A-conferir)" if aplicar else "Radar (fila de revisão)"
+    return JOB.start(nome, cmd)
+
+
 def acao_auditar_vault(pasta=""):
     """Audita o GRAFO do vault: fatias órfãs, partes inconsistentes, wikilinks
     quebrados, vocabulário que esconde notas dos painéis, áreas sem MOC."""
@@ -786,6 +818,9 @@ class Handler(BaseHTTPRequestHandler):
                                         force=bool(data.get("force", False)))
             elif a == "auditar_vault":
                 ok, msg = acao_auditar_vault(data.get("pasta", ""))
+            elif a == "radar":
+                ok, msg = acao_radar(data.get("pasta", ""),
+                                     aplicar=bool(data.get("aplicar", False)))
             else:
                 ok, msg = False, "Ação desconhecida."
             return self._send(200, json.dumps({"ok": ok, "msg": msg}))
@@ -1242,6 +1277,27 @@ tr:hover td{background:var(--surf2)}
       </div>
     </div>
   </div>
+
+  <div class="fase">Manutenção — o radar mantém o cérebro vivo</div>
+  <div class="trilho">
+    <div class="et" id="e10">
+      <div class="bar"><div class="dot">10</div><div class="linha"></div></div>
+      <div class="conteudo">
+        <div class="topo">
+          <h3>Radar</h3>
+          <span class="desc">Correlaciona os achados de <b>Radar/</b> (Cowork, Módulo E) às notas que os citam — por identificador, não por palpite.</span>
+          <span class="st" id="s10">—</span>
+          <div class="acoes">
+            <button data-a onclick="acao('radar',{pasta:vaultp.value,aplicar:false})">Fila de revisão</button>
+            <button data-a class="primary" onclick="acao('radar',{pasta:vaultp.value,aplicar:true})">Sinalizar A-conferir</button>
+          </div>
+        </div>
+        <div class="extra">
+          <div class="dica">O radar <b>sinaliza</b>; a decisão de reclassificar (Revogado/Superado) é do advogado, no ritual semanal. "Sinalizar" marca as notas afetadas com <b>A-conferir</b> — elas caem no painel de pendências do MOC. Fila: <b>RELATORIO-RADAR.md</b>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- 04 LOG -->
@@ -1517,7 +1573,7 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
                        fatiar:'e5', validar:'e6', auditar:'e7',
-                       publicar:'e8', auditar_vault:'e9'};
+                       publicar:'e8', auditar_vault:'e9', radar:'e10'};
 async function acao(a,extra){
   const et = document.getElementById(ETAPA_DA_ACAO[a]||'');
   const ehDry = extra && extra.dry === true;
@@ -1544,7 +1600,7 @@ function marcar(id, estadoEt, texto, classe){
 }
 function atualizarTrilho(p, temRoot){
   if(!temRoot){
-    for(let i=1;i<=9;i++) marcar('e'+i,'bloq','defina a pasta','');
+    for(let i=1;i<=10;i++) marcar('e'+i,'bloq','defina a pasta','');
     return;
   }
   const dt = (k) => (p.datas && p.datas[k]) ? ' · '+p.datas[k] : '';
@@ -1582,6 +1638,11 @@ function atualizarTrilho(p, temRoot){
   if(!p.vault)              marcar('e9','bloq','publique o vault antes','');
   else if(p.vault_auditado) marcar('e9','feito','grafo auditado'+dt('vault_auditado'),'ok');
   else                      marcar('e9','ativa', p.vault+' notas no vault','pend');
+  // 10 radar (manutenção contínua)
+  if(!p.vault)              marcar('e10','bloq','publique o vault antes','');
+  else if(!p.radar)         marcar('e10','bloq','sem achados em Radar/ (Módulo E)','');
+  else if(p.radar_novos)    marcar('e10','ativa', p.radar_novos+' achado(s) novo(s)','pend');
+  else                      marcar('e10','feito','radar em dia'+dt('radar'),'ok');
 }
 
 /* ---------- estado ---------- */
