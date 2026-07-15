@@ -1,0 +1,527 @@
+<!--
+  Painel de Controle do Acervo Jurídico — aplicação de arquivo único.
+  Rode com duplo-clique (abre no navegador). Funciona offline, sem instalar nada.
+  Mantenha este arquivo na MESMA PASTA dos módulos .md para os links funcionarem.
+  O estado (contagens e checklist) fica em memória; use "Salvar estado" para gravar um .json.
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acervo Jurídico · Painel de Controle</title>
+<style>
+  :root{
+    --ink:#1b2a41;        /* navio/tinta */
+    --ink-soft:#43506a;
+    --muted:#6b7280;
+    --paper:#f2f1ec;      /* papel */
+    --surface:#ffffff;
+    --surface-2:#faf9f5;
+    --line:#dedbd2;        /* hairline quente */
+    --burgundy:#7a2e3a;    /* acento assinatura */
+    --burgundy-2:#9a3b45;
+    --brass:#a9863f;       /* detalhe dourado, com parcimônia */
+    --green:#3f7a5a;       /* vigente/ok */
+    --amber:#a9772a;       /* a-conferir */
+    --red:#9a3b34;         /* revogado/superado */
+    --shadow:0 1px 2px rgba(27,42,65,.06),0 8px 24px rgba(27,42,65,.06);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code",Consolas,"Roboto Mono","Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--burgundy);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  /* ---------- top bar ---------- */
+  header.top{
+    position:sticky;top:0;z-index:20;background:rgba(242,241,236,.85);
+    backdrop-filter:saturate(150%) blur(8px);border-bottom:1px solid var(--line);
+  }
+  .top .wrap{display:flex;align-items:center;gap:16px;padding:12px 20px}
+  .brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .scales{font-size:22px;line-height:1;color:var(--burgundy)}
+  .brand h1{font-family:var(--serif);font-size:19px;font-weight:600;margin:0;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand h1 small{display:block;font-family:var(--sans);font-weight:400;font-size:11.5px;color:var(--muted);letter-spacing:.3px;text-transform:uppercase}
+  .top .spacer{flex:1}
+  .ring{display:flex;align-items:center;gap:10px}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .pct{font-family:var(--serif);font-weight:600;font-size:15px;min-width:38px;text-align:right}
+  .ring .lbl{font-size:11px;color:var(--muted);line-height:1.2}
+  .btn{
+    font-family:var(--sans);font-size:12.5px;border:1px solid var(--line);background:var(--surface);
+    color:var(--ink);padding:7px 11px;border-radius:8px;cursor:pointer;transition:.15s;white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--burgundy);color:var(--burgundy)}
+  .btn:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible{outline:2px solid var(--burgundy);outline-offset:2px}
+
+  /* ---------- hero ---------- */
+  .hero{padding:34px 0 8px}
+  .eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--brass);font-weight:600}
+  .hero h2{font-family:var(--serif);font-weight:600;font-size:30px;line-height:1.15;margin:8px 0 6px;max-width:20ch}
+  .hero p{color:var(--ink-soft);max-width:62ch;margin:0}
+
+  /* ---------- sections ---------- */
+  section{padding:26px 0;border-top:1px solid var(--line)}
+  section:first-of-type{border-top:none}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+  .sec-head .n{font-family:var(--serif);color:var(--burgundy);font-size:14px;font-weight:600;letter-spacing:.05em}
+  .sec-head h3{font-family:var(--serif);font-size:20px;font-weight:600;margin:0}
+  .sec-head p{margin:0;color:var(--muted);font-size:13px}
+
+  /* ---------- pipeline flow (assinatura) ---------- */
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .stage{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 12px;position:relative;box-shadow:var(--shadow)
+  }
+  .stage::after{
+    content:"›";position:absolute;right:-11px;top:50%;transform:translateY(-50%);
+    color:var(--line);font-size:22px;z-index:2
+  }
+  .stage:last-child::after{content:""}
+  .stage .st-k{font-size:11px;color:var(--brass);font-weight:600;letter-spacing:.04em}
+  .stage .st-name{font-family:var(--serif);font-size:14.5px;font-weight:600;margin:2px 0 10px;line-height:1.25}
+  .stage input[type=number]{
+    width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-family:var(--mono);
+    font-size:15px;color:var(--ink);background:var(--surface-2);text-align:center
+  }
+  .stage .st-lbl{font-size:10.5px;color:var(--muted);text-align:center;margin-top:4px}
+  .flowbar{height:6px;border-radius:6px;background:var(--line);margin-top:10px;overflow:hidden}
+  .flowbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--burgundy),var(--burgundy-2))}
+
+  /* ---------- checklist (SOP) ---------- */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .steps{list-style:none;margin:0;padding:6px}
+  .steps li{display:flex;gap:11px;align-items:flex-start;padding:10px;border-radius:9px}
+  .steps li:hover{background:var(--surface-2)}
+  .steps input{margin-top:3px;width:17px;height:17px;accent-color:var(--burgundy);cursor:pointer}
+  .steps .txt strong{display:block;font-size:14px}
+  .steps .txt span{font-size:12.5px;color:var(--muted)}
+  .steps .txt a{font-size:12px}
+  .steps li.done .txt strong{color:var(--muted);text-decoration:line-through}
+
+  /* ---------- command center ---------- */
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{font-size:12.5px;padding:6px 12px;border:1px solid var(--line);border-radius:20px;background:var(--surface);cursor:pointer}
+  .tab[aria-selected=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .cmd{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
+  .cmd h4{margin:0 0 8px;font-size:13.5px;font-family:var(--sans);font-weight:600}
+  .cmd h4 em{font-style:normal;color:var(--muted);font-weight:400;font-size:12px}
+  .code{position:relative}
+  pre{
+    margin:0;background:var(--ink);color:#eef1f6;border-radius:9px;padding:12px 44px 12px 12px;
+    overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6
+  }
+  pre .cm{color:#9fb0c9}
+  .copy{position:absolute;top:8px;right:8px;background:#2b3a54;border:1px solid #3a4a66;color:#cdd6e6;
+    font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer}
+  .copy:hover{background:#354564}
+  .copy.ok{background:var(--green);border-color:var(--green);color:#fff}
+
+  /* ---------- frontmatter generator ---------- */
+  .fm{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .form label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:3px}
+  .form .f-wide{grid-column:1/-1}
+  .form input,.form select{
+    width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-family:var(--sans);
+    font-size:13px;background:var(--surface);color:var(--ink)
+  }
+
+  /* ---------- taxonomy chips ---------- */
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 4px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);background:var(--surface)}
+  .chip.v{border-color:var(--green);color:var(--green)}
+  .chip.a{border-color:var(--amber);color:var(--amber)}
+  .chip.r{border-color:var(--red);color:var(--red)}
+  .tx-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 4px;font-weight:600}
+
+  /* ---------- module library ---------- */
+  .mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .mod{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow);transition:.15s;color:inherit}
+  .mod:hover{transform:translateY(-2px);border-color:var(--burgundy);text-decoration:none}
+  .mod .tag{font-family:var(--serif);color:var(--burgundy);font-size:13px;font-weight:600}
+  .mod h5{margin:4px 0 5px;font-size:14.5px;font-family:var(--sans)}
+  .mod p{margin:0;font-size:12.5px;color:var(--muted)}
+
+  footer{padding:30px 0 60px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line)}
+  .note{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--ink-soft)}
+
+  @media (max-width:860px){
+    .flow{grid-template-columns:1fr 1fr}
+    .stage::after{display:none}
+    .grid2{grid-template-columns:1fr}
+    .fm{grid-template-columns:1fr}
+    .hero h2{font-size:25px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <span class="scales" aria-hidden="true">⚖</span>
+      <h1>Acervo Jurídico<small>Painel de Controle da Base de Conhecimento</small></h1>
+    </div>
+    <div class="spacer"></div>
+    <div class="ring" title="Progresso do roteiro de execução">
+      <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true">
+        <circle cx="19" cy="19" r="15" fill="none" stroke="#dedbd2" stroke-width="4"/>
+        <circle id="ringFill" cx="19" cy="19" r="15" fill="none" stroke="#7a2e3a" stroke-width="4"
+                stroke-linecap="round" stroke-dasharray="94.2" stroke-dashoffset="94.2"/>
+      </svg>
+      <div><div class="pct" id="ringPct">0%</div><div class="lbl">concluído</div></div>
+    </div>
+    <button class="btn" onclick="saveState()">Salvar estado</button>
+    <button class="btn" onclick="document.getElementById('imp').click()">Carregar</button>
+    <input type="file" id="imp" accept="application/json" hidden onchange="loadState(event)">
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <div class="eyebrow">Segundo cérebro · Claude &amp; Gemini</div>
+    <h2>Do arquivo baixado à base viva, num só lugar.</h2>
+    <p>Este painel acompanha o roteiro de conversão e organização do acervo — da triagem ao vault do Obsidian — e reúne comandos, taxonomia e geradores para que a equipe trabalhe sem decorar nada. Marque o progresso, copie o comando certo e gere metadados padronizados em segundos.</p>
+  </div>
+
+  <!-- 01 fluxo -->
+  <section id="fluxo">
+    <div class="sec-head"><span class="n">01</span><h3>Fluxo do acervo</h3><p>quantos arquivos estão em cada etapa agora</p></div>
+    <div class="flow" id="flow">
+      <div class="stage"><div class="st-k">ENTRADA</div><div class="st-name">Baixados</div><input type="number" min="0" value="0" data-stage="0" oninput="onFlow()"><div class="st-lbl">a triar</div><div class="flowbar"><i></i></div></div>
+      <div class="stage"><div class="st-k">ROTA C</div><div class="st-name">OCR feito</div><input type="number" min="0" value="0" data-stage="1" oninput="onFlow()"><div class="st-lbl">escaneados legíveis</div><div class="flowbar"><i></i></div></div>
+      <div class="stage"><div class="st-k">CONVERSÃO</div><div class="st-name">Markdown bruto</div><input type="number" min="0" value="0" data-stage="2" oninput="onFlow()"><div class="st-lbl">convertidos</div><div class="flowbar"><i></i></div></div>
+      <div class="stage"><div class="st-k">CURADORIA</div><div class="st-name">Limpo + fatiado</div><input type="number" min="0" value="0" data-stage="3" oninput="onFlow()"><div class="st-lbl">prontos p/ vault</div><div class="flowbar"><i></i></div></div>
+      <div class="stage"><div class="st-k">VAULT</div><div class="st-name">No Obsidian</div><input type="number" min="0" value="0" data-stage="4" oninput="onFlow()"><div class="st-lbl">catalogados</div><div class="flowbar"><i></i></div></div>
+    </div>
+  </section>
+
+  <!-- 02 SOP -->
+  <section id="sop">
+    <div class="sec-head"><span class="n">02</span><h3>Roteiro de execução</h3><p>o SOP em 8 passos — marque à medida que avança</p></div>
+    <div class="grid2">
+      <div class="card"><ul class="steps" id="stepsA"></ul></div>
+      <div class="card"><ul class="steps" id="stepsB"></ul></div>
+    </div>
+  </section>
+
+  <!-- 02b dependências -->
+  <section id="deps">
+    <div class="sec-head"><span class="n">02b</span><h3>Dependências</h3><p>marque o que já instalou — o resto vira um comando único</p></div>
+    <div class="card" style="padding:16px">
+      <ul class="steps" id="depList" style="padding:0"></ul>
+      <div class="code" style="margin-top:10px">
+        <pre id="depCmd">Tudo marcado — ambiente completo.</pre>
+        <button class="copy" onclick="copyEl('depCmd',this)">Copiar tudo</button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">
+        Cole no terminal do <b>WSL2</b> (Ubuntu). O <code>tesseract-ocr-por</code> <b>não</b> vem por padrão — sem ele, obras em português são OCRizadas em inglês.</p>
+    </div>
+  </section>
+
+  <!-- 03 comandos -->
+  <section id="comandos">
+    <div class="sec-head"><span class="n">03</span><h3>Central de comandos</h3><p>escolha seu sistema e copie</p></div>
+    <div class="tabs" id="osTabs">
+      <button class="tab" data-os="ubuntu" aria-selected="true">Ubuntu / Debian</button>
+      <button class="tab" data-os="mac" aria-selected="false">macOS</button>
+      <button class="tab" data-os="win" aria-selected="false">Windows</button>
+    </div>
+    <div id="cmds"></div>
+  </section>
+
+  <!-- 04 frontmatter -->
+  <section id="frontmatter">
+    <div class="sec-head"><span class="n">04</span><h3>Gerador de metadados (frontmatter)</h3><p>preencha e copie o bloco YAML padrão</p></div>
+    <div class="fm">
+      <div class="card" style="padding:16px">
+        <div class="form">
+          <div class="f-wide"><label>Título</label><input id="fm_titulo" oninput="genFM()" placeholder="Curso de Direito Tributário"></div>
+          <div><label>Autor / Órgão</label><input id="fm_autor" oninput="genFM()" placeholder="Hugo de Brito Machado"></div>
+          <div><label>Ano</label><input id="fm_ano" oninput="genFM()" placeholder="2023"></div>
+          <div><label>Área</label><select id="fm_area" onchange="genFM()"></select></div>
+          <div><label>Tipo</label><select id="fm_tipo" onchange="genFM()"></select></div>
+          <div><label>Natureza</label><select id="fm_nat" onchange="genFM()"></select></div>
+          <div><label>Órgão/Instância</label><select id="fm_org" onchange="genFM()"></select></div>
+          <div><label>Vigência</label><select id="fm_status" onchange="genFM()"></select></div>
+          <div><label>Confiabilidade</label><select id="fm_conf" onchange="genFM()"></select></div>
+          <div class="f-wide"><label>Tags (separadas por vírgula)</label><input id="fm_tags" oninput="genFM()" placeholder="prescricao-tributaria, lancamento"></div>
+        </div>
+      </div>
+      <div class="code">
+        <pre id="fmOut"></pre>
+        <button class="copy" onclick="copyEl('fmOut',this)">Copiar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 taxonomia -->
+  <section id="taxonomia">
+    <div class="sec-head"><span class="n">05</span><h3>Taxonomia de referência</h3><p>o vocabulário controlado do acervo</p></div>
+    <div class="card" style="padding:16px">
+      <div class="tx-label">Áreas do Direito</div>
+      <div class="chips" id="txAreas"></div>
+      <div class="tx-label">Tipo de documento</div>
+      <div class="chips" id="txTipos"></div>
+      <div class="tx-label">Vigência / status</div>
+      <div class="chips">
+        <span class="chip v">Vigente</span><span class="chip a">A-conferir</span>
+        <span class="chip r">Revogado</span><span class="chip r">Superado</span>
+        <span class="chip a">Alterado</span><span class="chip a">Modulado</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 módulos -->
+  <section id="modulos">
+    <div class="sec-head"><span class="n">06</span><h3>Biblioteca de módulos</h3><p>o roteiro completo — abre o .md ao lado deste arquivo</p></div>
+    <div class="mods" id="mods"></div>
+  </section>
+
+  <footer>
+    <div class="note"><strong>Sigilo em primeiro lugar.</strong> Este painel e o pipeline são pensados para <strong>material público</strong> (livros, legislação, jurisprudência, notícias). Para documentos sigilosos de clientes, use processamento local e revise as políticas do provedor antes de enviar qualquer coisa à nuvem. A IA acelera; a conferência de citações que vão para peça continua sendo do advogado.</div>
+    <p style="margin-top:14px">Painel de Controle do Acervo Jurídico · v2.1 · funciona offline · mantenha na mesma pasta dos módulos <code>.md</code>.</p>
+  </footer>
+</main>
+
+<script>
+/* ---------------- dados ---------------- */
+var AREAS=["Civil","Penal","Trabalhista","Tributário","Administrativo","Constitucional","Empresarial","Consumidor","Previdenciário","Ambiental","Família","Processual"];
+var TIPOS=["Doutrina","Legislação","Jurisprudência","Súmula","Parecer","Modelo","Artigo"];
+var NAT=["Contencioso-Judicial","Contencioso-Administrativo","Consultivo","Extrajudicial"];
+var ORG=["","STF","STJ","TST","TSE","STM","TRF","TJ","TRT","TRE","1ª-Instância","Turma-Recursal","Agência-Reguladora"];
+var STATUS=["Vigente","A-conferir","Revogado","Alterado","Superado","Modulado"];
+var CONF=["A-conferir","Oficial","Doutrinária","Interna","Conferida"];
+
+var DEPS=[
+  ["Calibre + OCR + utilitários","sudo apt install -y calibre ocrmypdf ghostscript poppler-utils unpaper pandoc"],
+  ["Idiomas do OCR (pt/en/de/fr/it/es)","sudo apt install -y tesseract-ocr-por tesseract-ocr-eng tesseract-ocr-deu tesseract-ocr-fra tesseract-ocr-ita tesseract-ocr-spa"],
+  ["Python em venv (PyMuPDF + Docling)","python3 -m venv ~/venvs/acervo && source ~/venvs/acervo/bin/activate && pip install --upgrade pip && pip install pymupdf docling"],
+  ["Obsidian (vault)","https://obsidian.md — instalador do Windows"],
+  ["Claude Desktop (Cowork + Projetos)","https://claude.com/download"]
+];
+
+var STEPS=[
+  ["Triar","formato? tem texto? natureza? → planilha de controle","D · Passo 1"],
+  ["Classificar no Calibre","colunas, tags e série","01 · Seção 2"],
+  ["Converter","rota A (ePUB/MOBI) · B (PDF nativo) · C (OCR+Marker/Docling)","B · Comandos"],
+  ["Renomear","padrão [AREA]_[TIPO]_[ANO]_[Titulo]_[Autor].md","01 · Seção 4"],
+  ["Limpar","remover ruído; preservar leis, ementas e teses","D · Passo 5"],
+  ["Fatiar","nota-índice + fatias (~500–1.500 tokens)","01 · Seção 6"],
+  ["Migrar ao Obsidian","pastas por área, frontmatter, MOCs","D · Passo 7"],
+  ["Controle de qualidade","testar no Claude; marcar itens conferidos","01 · Seção 9"]
+];
+
+var MODS=[
+  ["00","Índice-Mestre","Mapa do pacote e início rápido.","00_INDICE_MESTRE_e_Guia_Cowork.md"],
+  ["01","Roteiro-base","Triagem, rotas, fatiamento, Obsidian.","01_Roteiro_Base_v1_PRESERVADO.md"],
+  ["A","Aplicativos","Ficha de cada app: licença, links, instalação.","A_Catalogo_de_Aplicativos.md"],
+  ["B","Comandos","Windows · Ubuntu · macOS, prontos.","B_Comandos_Multiplataforma.md"],
+  ["C","Modelos LLM","Claude e Gemini por tarefa.","C_Selecao_de_Modelos_LLM.md"],
+  ["D","Cowork Playbook","Passo a passo com prompts prontos.","D_Cowork_Playbook_e_Ferramentas.md"],
+  ["E","Automações","Notícias e monitoramento de leis/jurisprudência.","E_Automacoes_Monitoramento.md"],
+  ["F","Painel visual","Este painel — como usar e estender.","F_Aplicacao_Visual_Painel.md"],
+  ["G","VPS & infra","O que roda em servidor e o custo-benefício.","G_VPS_e_Infraestrutura.md"],
+  ["H","UX & UI","Estratégias para uma base confortável de usar.","H_UX_UI_e_Estrategias.md"]
+];
+
+/* comandos por SO */
+function C(cm,code){return {cm:cm,code:code};}
+var CMDS={
+  ubuntu:[
+    ["Instalar — sistema","uma vez por máquina", C("# Calibre, OCR e utilitários (NÃO instale Python do pipeline aqui)","sudo apt update && sudo apt install -y calibre ocrmypdf ghostscript poppler-utils unpaper pandoc")],
+    ["Instalar — 6 idiomas do OCR","acervo multilíngue: pt/en/de/fr/it/es", C("# ATENÇÃO: tesseract-ocr-por NÃO vem por padrão","sudo apt install -y tesseract-ocr-por tesseract-ocr-eng tesseract-ocr-deu tesseract-ocr-fra tesseract-ocr-ita tesseract-ocr-spa")],
+    ["Instalar — Python em venv","evita o conflito numpy × scipy", C("# nunca use pip --user para o pipeline","python3 -m venv ~/venvs/acervo && source ~/venvs/acervo/bin/activate && pip install --upgrade pip && pip install pymupdf docling")],
+    ["OCR em lote (recomendado)","detecta idioma e o que precisa de OCR", C("# gera controle.csv; MODE=manter preserva o original","MODE=manter ROOT=\"/mnt/c/Users/.../drive\" bash _scripts/aplicar_ocr.sh")],
+    ["OCR — um arquivo","troque -l pelo idioma da obra", C("# por | eng | deu | fra | ita | spa","ocrmypdf -l por --deskew --rotate-pages --clean --output-type pdfa entrada.pdf saida.pdf")],
+    ["Detectar idioma das obras","pt/en/de/fr/it/es", C("","python3 _scripts/detectar_idioma.py \"/mnt/c/Users/.../drive\"")],
+    ["PDF → Markdown COM páginas","essencial p/ citação ABNT", C("# ative o venv antes","source ~/venvs/acervo/bin/activate && python _scripts/injetar_paginas.py livro.pdf -o livro.md")],
+    ["ePUB/MOBI → Markdown","rota A (alta qualidade)", C("# gera .txt em markdown; depois renomeie para .md","ebook-convert entrada.epub saida.txt --txt-output-formatting=markdown --enable-heuristics --keep-links --txt-output-encoding=utf-8 --chapter \"//h:h1\"")],
+    ["PDF complexo → Markdown","rota C (ferramenta dedicada)", C("# Docling (licença MIT) — ou marker_single ... --output_format markdown","pip install docling && docling entrada.pdf --to md --output ./2-MARKDOWN-BRUTO")],
+    ["Word (modelos) → Markdown","modelos internos", C("","pandoc modelo.docx -o modelo.md --wrap=none")],
+    ["PDF tem camada de texto?","se vier vazio, é escaneado", C("","pdftotext -l 2 entrada.pdf - | head")],
+    ["Conferir idiomas do OCR","devem aparecer: deu eng fra ita por spa", C("","tesseract --list-langs")]
+  ],
+  mac:[
+    ["Instalar — sistema","uma vez (com Homebrew)", C("# tesseract-lang traz todos os idiomas","brew install --cask calibre obsidian\nbrew install ocrmypdf tesseract tesseract-lang ghostscript pandoc poppler unpaper")],
+    ["Instalar — Python em venv","evita o conflito numpy × scipy", C("","python3 -m venv ~/venvs/acervo && source ~/venvs/acervo/bin/activate && pip install --upgrade pip && pip install pymupdf docling")],
+    ["OCR — PDF escaneado → legível","torna \"não editável\" em pesquisável", C("","ocrmypdf -l por --deskew --rotate-pages --clean --output-type pdfa entrada.pdf saida.pdf")],
+    ["ePUB/MOBI → Markdown","rota A (alta qualidade)", C("# depois renomeie: mv saida.txt saida.md","ebook-convert entrada.epub saida.txt --txt-output-formatting=markdown --enable-heuristics --keep-links --txt-output-encoding=utf-8 --chapter \"//h:h1\"")],
+    ["PDF complexo → Markdown","rota C (ferramenta dedicada)", C("","pip install docling && docling entrada.pdf --to md --output ./2-MARKDOWN-BRUTO")],
+    ["Word (modelos) → Markdown","modelos internos", C("","pandoc modelo.docx -o modelo.md --wrap=none")],
+    ["PDF tem camada de texto?","se vier vazio, é escaneado", C("","pdftotext -l 2 entrada.pdf - | head")]
+  ],
+  win:[
+    ["Instalar — recomendado: WSL2","OCR estável + o app de gerenciamento", C("# depois, dentro do Ubuntu (WSL), use os comandos da aba Ubuntu","wsl --install")],
+    ["Instalar — nativo (alternativa)","PowerShell como Administrador", C("# lembre de adicionar os idiomas ao tessdata","choco install -y calibre pandoc tesseract ghostscript python obsidian poppler")],
+    ["OCR — PDF escaneado → legível","adicione o idioma 'por' ao Tesseract", C("","ocrmypdf -l por --deskew --rotate-pages --clean --output-type pdfa entrada.pdf saida.pdf")],
+    ["ePUB/MOBI → Markdown","rota A (alta qualidade)", C("# depois: Rename-Item saida.txt saida.md","ebook-convert entrada.epub saida.txt --txt-output-formatting=markdown --enable-heuristics --keep-links --txt-output-encoding=utf-8 --chapter \"//h:h1\"")],
+    ["PDF complexo → Markdown","rota C (ferramenta dedicada)", C("","pip install docling ; docling entrada.pdf --to md --output .\\2-MARKDOWN-BRUTO")],
+    ["Word (modelos) → Markdown","modelos internos", C("","pandoc modelo.docx -o modelo.md --wrap=none")],
+    ["PDF tem camada de texto?","se vier vazio, é escaneado", C("","pdftotext -l 2 entrada.pdf - | Select-Object -First 5")]
+  ]
+};
+
+/* ---------------- render ---------------- */
+function opt(sel,arr){arr.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v||"—";sel.appendChild(o);});}
+opt(fm_area,AREAS);opt(fm_tipo,TIPOS);opt(fm_nat,NAT);opt(fm_org,ORG);opt(fm_status,STATUS);opt(fm_conf,CONF);
+
+(function(){ // chips
+  AREAS.forEach(function(a){var s=document.createElement("span");s.className="chip";s.textContent=a;txAreas.appendChild(s);});
+  TIPOS.forEach(function(t){var s=document.createElement("span");s.className="chip";s.textContent=t;txTipos.appendChild(s);});
+})();
+
+(function(){ // steps split in two columns
+  STEPS.forEach(function(s,i){
+    var li=document.createElement("li");
+    li.innerHTML='<input type="checkbox" data-step="'+i+'" onchange="onStep(this)"><div class="txt"><strong>'+(i+1)+'. '+s[0]+'</strong><span>'+s[1]+'</span><br><a href="#modulos">'+s[2]+'</a></div>';
+    (i<4?stepsA:stepsB).appendChild(li);
+  });
+})();
+
+(function(){ // dependências
+  DEPS.forEach(function(d,i){
+    var li=document.createElement("li");
+    li.innerHTML='<input type="checkbox" data-dep="'+i+'" onchange="onDep()">'+
+      '<div class="txt"><strong>'+d[0]+'</strong><span style="font-family:var(--mono);font-size:11.5px">'+esc(d[1])+'</span></div>';
+    depList.appendChild(li);
+  });
+  onDep();
+})();
+
+function onDep(){
+  var pend=[];
+  document.querySelectorAll('#depList input').forEach(function(b,i){
+    b.closest("li").classList.toggle("done", b.checked);
+    if(!b.checked && DEPS[i][1].indexOf("http")!==0) pend.push(DEPS[i][1]);
+  });
+  // funde os 'apt install -y' num só comando e encadeia o resto com &&
+  var pacotes=[], outros=[];
+  pend.forEach(function(c){
+    var m=c.match(/^sudo apt install -y (.+)$/);
+    if(m){ m[1].split(/\s+/).forEach(function(p){ if(p && pacotes.indexOf(p)<0) pacotes.push(p); }); }
+    else if(outros.indexOf(c)<0) outros.push(c);
+  });
+  var partes=[];
+  if(pacotes.length) partes.push("sudo apt install -y "+pacotes.join(" "));
+  partes=partes.concat(outros);
+  document.getElementById("depCmd").textContent =
+    partes.length ? partes.join(" && \\\n  ") : "Tudo marcado — ambiente completo.";
+}
+
+(function(){ // module cards
+  MODS.forEach(function(m){
+    var a=document.createElement("a");a.className="mod";a.href=m[3];
+    a.innerHTML='<div class="tag">'+m[0]+'</div><h5>'+m[1]+'</h5><p>'+m[2]+'</p>';
+    mods.appendChild(a);
+  });
+})();
+
+function renderCmds(os){
+  var host=document.getElementById("cmds");host.innerHTML="";
+  CMDS[os].forEach(function(c){
+    var d=document.createElement("div");d.className="cmd";
+    var body=(c[2].cm?'<span class="cm">'+c[2].cm+'</span>\n':'')+c[2].code;
+    d.innerHTML='<h4>'+c[0]+' <em>· '+c[1]+'</em></h4><div class="code"><pre>'+esc(body)+'</pre><button class="copy">Copiar</button></div>';
+    d.querySelector(".copy").addEventListener("click",function(){copyText(c[2].code,this);});
+    host.appendChild(d);
+  });
+}
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/<span class="cm">/g,'<span class="cm">').replace(/&lt;span class="cm"&gt;/g,'<span class="cm">').replace(/&lt;\/span&gt;/g,'</span>');}
+
+document.getElementById("osTabs").addEventListener("click",function(e){
+  var t=e.target.closest(".tab"); if(!t)return;
+  [].forEach.call(this.children,function(b){b.setAttribute("aria-selected", b===t);});
+  renderCmds(t.dataset.os);
+});
+renderCmds("ubuntu");
+
+/* ---------------- interações ---------------- */
+function onFlow(){
+  var ins=document.querySelectorAll('#flow input');var vals=[];
+  ins.forEach(function(i){vals.push(Math.max(0,parseInt(i.value||0)));});
+  var max=Math.max.apply(null,vals.concat([1]));
+  document.querySelectorAll('#flow .flowbar>i').forEach(function(bar,idx){
+    bar.style.width=(max?Math.round(vals[idx]/max*100):0)+"%";
+  });
+}
+function onStep(){updateRing();}
+function updateRing(){
+  var boxes=document.querySelectorAll('.steps input');var done=0;
+  boxes.forEach(function(b){ if(b.checked){done++; b.closest("li").classList.add("done");} else b.closest("li").classList.remove("done"); });
+  var pct=Math.round(done/boxes.length*100);
+  document.getElementById("ringPct").textContent=pct+"%";
+  var circ=2*Math.PI*15;
+  document.getElementById("ringFill").style.strokeDashoffset=circ*(1-pct/100);
+}
+updateRing();
+
+function genFM(){
+  function q(id){return (document.getElementById(id).value||"").trim();}
+  var area=q("fm_area"), tags=q("fm_tags");
+  var tagList=tags?tags.split(",").map(function(t){return t.trim();}).filter(Boolean):[];
+  var out="---\n";
+  out+='titulo: "'+(q("fm_titulo")||"")+'"\n';
+  out+='autor: "'+(q("fm_autor")||"")+'"\n';
+  out+="area: ["+area+"]\n";
+  out+="tipo: "+q("fm_tipo")+"\n";
+  out+="natureza: "+q("fm_nat")+"\n";
+  out+='orgao: "'+q("fm_org")+'"\n';
+  out+="status: "+q("fm_status")+"\n";
+  out+="ano: "+(q("fm_ano")||"")+"\n";
+  out+="confiabilidade: "+q("fm_conf")+"\n";
+  out+="tags: ["+tagList.join(", ")+"]\n";
+  out+='resumo: ""\n';
+  out+="---";
+  document.getElementById("fmOut").textContent=out;
+}
+genFM();
+
+/* ---------------- copiar ---------------- */
+function copyText(txt,btn){
+  var done=function(){ if(btn){var o=btn.textContent;btn.textContent="Copiado";btn.classList.add("ok");setTimeout(function(){btn.textContent=o;btn.classList.remove("ok");},1200);} };
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,function(){fallback(txt,done);});}
+  else fallback(txt,done);
+}
+function copyEl(id,btn){copyText(document.getElementById(id).textContent,btn);}
+function fallback(txt,cb){var ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(e){}document.body.removeChild(ta);cb&&cb();}
+
+/* ---------------- salvar / carregar estado ---------------- */
+function saveState(){
+  var st={flow:[],steps:[],saved:new Date().toISOString()};
+  document.querySelectorAll('#flow input').forEach(function(i){st.flow.push(i.value);});
+  document.querySelectorAll('.steps input').forEach(function(b){st.steps.push(b.checked);});
+  var blob=new Blob([JSON.stringify(st,null,2)],{type:"application/json"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="painel-acervo-estado.json";a.click();URL.revokeObjectURL(a.href);
+}
+function loadState(ev){
+  var f=ev.target.files[0]; if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var st=JSON.parse(r.result);
+      var fin=document.querySelectorAll('#flow input');
+      (st.flow||[]).forEach(function(v,i){if(fin[i])fin[i].value=v;});
+      var sb=document.querySelectorAll('.steps input');
+      (st.steps||[]).forEach(function(v,i){if(sb[i])sb[i].checked=v;});
+      onFlow();updateRing();
+    }catch(e){alert("Arquivo de estado inválido.");}
+  };
+  r.readAsText(f);ev.target.value="";
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '{print $5, $6, $7, $8, $NF}')",
+      "Bash(echo \"acervo_app rc=$?\")",
+      "Bash(echo \"validar rc=$?\")",
+      "Bash(cp -p acervo_app.py Roteiro-Base-Juridica/_scripts/acervo_app.py)",
+      "Bash(cp -p validar_yaml_abnt.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/validar_yaml_abnt.py)",
+      "Bash(python3 -m py_compile Roteiro-Base-Juridica/_scripts/acervo_app.py)",
+      "Bash(python3 -)"
+    ]
+  }
+}
