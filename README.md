@@ -62,10 +62,12 @@ second-brain/
 ├── verificar_ancoras.py     Valida âncoras (inclusive contra âncora INVENTADA)
 ├── validar_yaml_abnt.py     Valida o YAML por tipo_fonte + gera a referência ABNT
 ├── auditar_acervo.py        O arquivo gerado SERVE ao segundo cérebro? (nota por arquivo)
+├── auditar_vault.py         O GRAFO do vault está íntegro? (ligações entre notas)
 ├── preparar.py              ⭐ RODE PRIMEIRO se baixou pelo Windows (conserta CRLF/+x)
 ├── corrigir_acervo.sh       Encadeia idioma+limpar+fatiar+auditar de uma vez
 │
 ├── corpus/                  Fixtures de teste (oráculo de regressão — ver Guia do dev)
+├── corpus-vault/            Vault sintético: fixtures do auditor de grafo
 └── Roteiro-Base-Juridica/   📦 Documentação completa do método (perfil jurídico)
     ├── WORKFLOW.md          ⭐ runbook: as 6 fases + Apêndice A (falhas e incidentes)
     ├── 00_INDICE_MESTRE...  Mapa do pacote de documentação
@@ -118,6 +120,7 @@ No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos d
 | 5 · Fatiar | Livro grande → nota-índice + fatias | `fatiar.py` |
 | 6 · Validar | Âncoras + YAML ABNT por tipo | `verificar_ancoras.py` + `validar_yaml_abnt.py` |
 | 7 · Auditar | O resultado serve ao segundo cérebro? (PRONTO/PARCIAL/REPROVADO) | `auditar_acervo.py` |
+| 8 · Auditar vault | O **grafo** do vault está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs | `auditar_vault.py` |
 
 Guia completo do app (incluindo processamento de arquivos avulsos, offset de página e navegador de pastas): **[LEIA-ME_APP.md](LEIA-ME_APP.md)**.
 
@@ -155,6 +158,13 @@ python3 fatiar.py 2-MARKDOWN-BRUTO/ -o 3-MARKDOWN-LIMPO/ --palavras 1200
 python3 verificar_ancoras.py bruto.md --comparar limpo.md   # nenhuma âncora perdida NEM inventada
 python3 validar_yaml_abnt.py 3-MARKDOWN-LIMPO/ --gerar      # YAML por tipo + referência ABNT pronta
 python3 auditar_acervo.py 3-MARKDOWN-LIMPO/ --detalhado     # nota final por arquivo
+
+# FASE 5+ · auditoria do GRAFO do vault (depois de publicar no Obsidian)
+python3 auditar_vault.py 4-OBSIDIAN-VAULT/ --detalhado
+# Erros = nota fora do grafo ou INVISÍVEL nos painéis (fatia órfã, partes:
+# inconsistente, tipo/status fora do vocabulário, sem area, par tipo/tipo_fonte
+# incoerente, nome duplicado). Avisos = higiene (wikilink quebrado, área sem
+# MOC, nome fora do padrão). Gera RELATORIO-VAULT.md no vault; exit 1 se erro.
 
 # Utilitários
 python3 normalizar_yaml.py pasta/ --dry     # normaliza area/tags/autoria (veja antes de gravar)
@@ -230,7 +240,11 @@ python3 validar_yaml_abnt.py corpus --gerar 2>&1 | diff /tmp/antes.txt -
 
 # idem para: auditar_acervo.py corpus / normalizar_yaml.py corpus --dry /
 #            fatiar.py corpus -o /tmp/f --min-palavras 500
+# grafo do vault: corpus-vault/ tem 5 erros + 5 avisos PLANTADOS de propósito
+python3 auditar_vault.py corpus-vault --detalhado   # deve sair com rc=1
 ```
+> Ao rodar auditores sobre os corpus, use `--relatorio /tmp/...` — o padrão
+> grava o relatório DENTRO da pasta auditada e polui o oráculo.
 
 Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é censo, não portão); promova aviso→erro por tipo, quando o backlog daquele tipo zerar. `ACERVO_ESTRITO=1` mostra o futuro sem mudar o presente.
 
@@ -252,7 +266,7 @@ Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é c
 | Fase | Entrega | Status |
 |---|---|---|
 | **1** | Taxonomia canônica (`taxonomia.py`) + parser único (`frontmatter.py`) + triagem por conteúdo (`triagem.py`) + robustez OCR + saneamento de 6 duplicações de vocabulário e 4 parsers | ✅ concluída (jul/2026) |
-| **2** | `auditar_vault.py` — validador de **grafo** do vault: fatia órfã, `partes:` inconsistente, wikilink quebrado, área sem MOC, par `tipo`/`tipo_fonte` incoerente (etapa 8 do app) | 🔜 em desenvolvimento |
+| **2** | `auditar_vault.py` — validador de **grafo** do vault: fatia órfã, `partes:` inconsistente, wikilink quebrado, área sem MOC, par `tipo`/`tipo_fonte` incoerente (etapa 8 do app) | ✅ concluída (jul/2026) |
 | **3** | `publicar.py` — Fase 5 determinística: roteia `3-MARKDOWN-LIMPO` → vault por perfil, idempotente, travado em validação verde + travas de reexecução no trilho do app | planejada |
 | **4** | `gerar_moc.py` — scaffolder de MOC por predicado de área, com marcadores de bloco preservando a curadoria manual | planejada |
 | **5** | Radar (etapa 9) — correlação determinística `Radar/` → notas afetadas (fila `A-conferir`); a descoberta/web fica no Cowork | planejada |
@@ -267,7 +281,8 @@ O [Apêndice A do WORKFLOW](Roteiro-Base-Juridica/WORKFLOW.md) tem o diagnóstic
 | "Some input metadata could not be copied… PDF/A" | **aviso benigno** (XMP da origem não cabe no PDF/A; o PDF sai válido) | nada a fazer — o log anota `AVISO (inofensivo)`; se incomodar, `OUTPUT_TYPE=pdf` |
 | OCR falha com `rc=N` | veja o motivo no log (`rc_motivo`) e no `controle.csv` | 2=entrada inválida · 6=PDF corrompido · 8=criptografado · 10=só PDF/A falhou (arquivo OK) |
 | `Permission denied` / `command not found` ao rodar script baixado | CRLF/permissões do Windows | `python3 preparar.py` |
-| Nota não aparece no MOC | metadado fora do vocabulário, `area` ausente, ou `parte:` indevido | `python3 auditar_acervo.py` (e, na Fase 2, `auditar_vault.py`) |
+| Nota não aparece no MOC | metadado fora do vocabulário, `area` ausente, ou `parte:` indevido | `python3 auditar_vault.py <vault>` — foi feito exatamente para tornar esse silêncio visível |
+| Fatia perdida / índice desatualizado | `obra:` aponta para índice inexistente, ou `partes:` ≠ nº real de fatias | idem — seção "Erros" do `RELATORIO-VAULT.md` |
 
 ---
 
