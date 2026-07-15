@@ -36,6 +36,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import taxonomia
+
 # Palavras funcionais por idioma. Bastam para textos com 30+ palavras.
 STOPWORDS = {
     "por": ("de a o que e do da em um para com nao uma os no se na por mais as dos como mas ao "
@@ -62,8 +64,7 @@ STOPWORDS = {
 }
 STOPSETS = {lg: set(s.split()) for lg, s in STOPWORDS.items()}
 
-NOMES = {"por": "português", "eng": "inglês", "deu": "alemão",
-         "fra": "francês", "ita": "italiano", "spa": "espanhol"}
+NOMES = taxonomia.IDIOMAS   # fonte única do vocabulário de idiomas
 
 # Limiar mínimo de confiança. Abaixo disso, devolvemos "" (indefinido) em vez de
 # chutar — chutar o idioma errado no OCR é pior do que admitir a dúvida.

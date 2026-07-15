@@ -122,11 +122,9 @@ def main():
     _regra = taxonomia.TIPOS_FONTE.get(tf)
     loc_tipo, loc_ab = _regra.localizador if _regra else (None, None)
 
-    NOMES = {"por": "português", "eng": "inglês", "deu": "alemão",
-             "fra": "francês", "ita": "italiano", "spa": "espanhol"}
-    # Edição na língua do documento (NBR 6023:2018)
-    EDICAO = {"por": "N. ed.", "eng": "Nth ed.", "deu": "N. Aufl.",
-              "fra": "Ne éd.", "ita": "N. ed.", "spa": "N. ed."}
+    # Fonte única do vocabulário de idiomas (NBR 6023: edição na língua do doc.)
+    NOMES = taxonomia.IDIOMAS
+    EDICAO = taxonomia.IDIOMA_EDICAO
     idi = args.idioma.strip().split("+")[0]
     extra = ""
     if idi in NOMES:

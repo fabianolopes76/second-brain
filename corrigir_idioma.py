@@ -27,10 +27,10 @@ import sys
 import unicodedata
 from pathlib import Path
 
-NOMES = {"por": "português", "eng": "inglês", "deu": "alemão",
-         "fra": "francês", "ita": "italiano", "spa": "espanhol"}
-EDICAO = {"por": "N. ed.", "eng": "Nth ed.", "deu": "N. Aufl.",
-          "fra": "Ne éd.", "ita": "N. ed.", "spa": "N. ed."}
+import taxonomia
+
+NOMES = taxonomia.IDIOMAS          # fonte única do vocabulário de idiomas
+EDICAO = taxonomia.IDIOMA_EDICAO
 
 AQUI = Path(__file__).resolve().parent
 
