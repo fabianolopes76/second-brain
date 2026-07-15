@@ -25,7 +25,23 @@
       "Bash(python3 auditar_acervo.py corpus --detalhado --relatorio /tmp/novo-aud.md)",
       "Bash(python3 -m py_compile fatiar.py)",
       "Bash(python3 fatiar.py corpus -o /tmp/novo-fatias --min-palavras 500)",
-      "Bash(cp -r /tmp/novo-fatias /tmp/ouro-fatias)"
+      "Bash(cp -r /tmp/novo-fatias /tmp/ouro-fatias)",
+      "Bash(python3 triagem.py --inferir \"LGPD.pdf\")",
+      "Bash(python3 triagem.py --inferir \"documento-digitalizado-042.pdf\")",
+      "Bash(python3 triagem.py --inferir \"curso-direito-civil.pdf\")",
+      "Bash(python3 triagem.py --linha \"lei-8112.pdf\" \"/x/lei-8112.pdf\" 10 0 sim nao ok \"/x/lei-8112.pdf\" por)",
+      "Bash(bash -n aplicar_ocr.sh)",
+      "Bash(python3 -m py_compile acervo_app.py)",
+      "Bash(gs -q -o /tmp/teste-ocr/texto.pdf -sDEVICE=pdfwrite -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -c \"/Helvetica findfont 14 scalefont setfont 72 760 moveto \\(LEI No 9.999, DE 1 DE JANEIRO DE 2020\\) show 72 730 moveto \\(Art. 1o Esta lei regula o teste de OCR do pipeline.\\) show 72 700 moveto \\(Art. 2o Esta lei entra em vigor na data de sua publicacao.\\) show showpage\")",
+      "Bash(gs -q -o /tmp/teste-ocr/lei-teste-digitalizada.pdf -sDEVICE=pdfimage24 -r150 /tmp/teste-ocr/texto.pdf)",
+      "Bash(pdftotext /tmp/teste-ocr/lei-teste-digitalizada.pdf -)",
+      "Bash(DRYRUN=1 ROOT=/tmp/teste-ocr CSV_FILE=/tmp/teste-ocr/controle.csv bash aplicar_ocr.sh)",
+      "Bash(grep -vE '^\\\\s*$')",
+      "Bash(DRYRUN=1 MODE=manter ROOT=/tmp/teste-ocr CSV_FILE=/tmp/teste-ocr/controle.csv bash aplicar_ocr.sh)",
+      "Bash(MODE=manter ROOT=/tmp/teste-ocr CSV_FILE=/tmp/teste-ocr/controle.csv bash aplicar_ocr.sh)",
+      "Bash(pdftotext /tmp/teste-ocr/lei-teste-digitalizada_OCR.pdf -)",
+      "Bash(pdftotext -l 2 /tmp/teste-ocr/lei-teste-digitalizada_OCR.pdf -)",
+      "Bash(python3 triagem.py --inferir \"documento-sem-nome-util.pdf\")"
     ]
   }
 }

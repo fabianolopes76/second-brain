@@ -46,6 +46,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import taxonomia
+import triagem
+
 # ---------------------------------------------------------------------------
 # Estado global de execução (um job por vez — simples e previsível)
 # ---------------------------------------------------------------------------
@@ -192,7 +195,8 @@ def diagnostico():
 
     # scripts
     for s in ["aplicar_ocr.sh", "injetar_paginas.py", "verificar_ancoras.py",
-              "validar_yaml_abnt.py"]:
+              "validar_yaml_abnt.py", "taxonomia.py", "frontmatter.py",
+              "triagem.py"]:
         p = Path(CFG["scripts"]) / s
         itens.append({"nome": f"script {s}", "ok": p.exists(),
                       "dica": "" if p.exists() else f"não encontrado em {CFG['scripts']}"})
@@ -314,7 +318,8 @@ def progresso():
     r["csv"] = len(linhas)
     r["ocr_pend"] = sum(1 for l in linhas
                         if l.get("precisou_ocr") == "sim"
-                        and l.get("ocr_status") in ("dry_run", "FALHOU", ""))
+                        and (l.get("ocr_status") in ("dry_run", "")
+                             or str(l.get("ocr_status", "")).startswith("FALHOU")))
 
     bruto = base / "2-MARKDOWN-BRUTO"
     if bruto.is_dir():
@@ -392,7 +397,7 @@ def acao_paginar(offset=0, romanas=0):
             c += ["--romanas-ate", str(romanas)]
         # Aproveita o palpite de tipo_fonte da triagem para pré-preencher o YAML.
         tf = (l.get("tipo_fonte_provavel") or "").strip()
-        if tf and tf != "peca_interna":
+        if tf and taxonomia.eh_abnt(tf):
             c += ["--tipo-fonte", tf]
         idi = (l.get("idioma") or "").strip()
         if idi:
@@ -421,21 +426,14 @@ def _detectar_idioma_de(src: Path) -> str:
 
 
 def _tipo_do_nome(nome: str) -> str:
-    """Mesma heurística do aplicar_ocr.sh — palpite pelo nome. SEMPRE revisar."""
-    n = nome.lower()
-    regras = [
-        (("acordao", "acórdão", "resp ", "resp-", "agravo", "apela", "habeas",
-          "sumula", "súmula", "jurisprud"), "jurisprudencia"),
-        (("lei", "decreto", "codigo", "código", "constituic", "emenda"), "legislacao"),
-        (("portaria", "instrucao-normativa", "resolucao", "resolução", "edital",
-          "parecer", "oficio"), "ato_administrativo"),
-        (("tese", "dissertacao", "dissertação", "monografia", "tcc"), "trabalho_academico"),
-        (("artigo", "revista", "periodico", "periódico"), "artigo_periodico"),
-    ]
-    for chaves, tipo in regras:
-        if any(k in n for k in chaves):
-            return tipo
-    return "livro"
+    """Palpite de tipo_fonte — delega a triagem.py (fonte única de heurística).
+
+    Sem fallback cego para "livro": quando nada pontua, devolve "" e o YAML
+    sai sem tipo_fonte — o validador cobra de forma visível, em vez de a
+    legislação virar "livro" em silêncio.
+    """
+    tipo, _conf, _evid = triagem.inferir_tipo(nome)
+    return tipo
 
 
 def acao_lote(arquivos, offset=0, romanas=0, tipo="", idioma=""):
@@ -490,7 +488,7 @@ def acao_lote(arquivos, offset=0, romanas=0, tipo="", idioma=""):
             c += ["--offset", str(offset)]
         if romanas:
             c += ["--romanas-ate", str(romanas)]
-        if tf and tf != "peca_interna":
+        if tf and taxonomia.eh_abnt(tf):
             c += ["--tipo-fonte", tf]
         if idi:
             c += ["--idioma", idi]

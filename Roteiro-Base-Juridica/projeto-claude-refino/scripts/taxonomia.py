@@ -186,6 +186,7 @@ class Perfil(NamedTuple):
     status: tuple                # vocabulário de vigência/situação
     natureza: tuple
     heuristicas_tipo: tuple      # ((palavras-chave...), tipo_fonte) p/ triagem
+    heuristicas_conteudo: tuple = ()   # (regex, tipo_fonte, peso) sobre o TEXTO
 
 
 PERFIS = {
@@ -275,6 +276,32 @@ PERFIS = {
             (("peticao", "petição", "contestacao", "contestação", "recurso",
               "minuta", "contrato"), "peca_interna"),
         ),
+        # Sinais no CONTEÚDO (1ª/2ª página) — mais confiáveis que o nome do
+        # arquivo. A primeira página de uma lei é altamente diagnóstica.
+        heuristicas_conteudo=(
+            (r"\bLEI\s+N[ºo°\.]", "legislacao", 2),
+            (r"\bDECRETO(-LEI)?\s+N[ºo°\.]", "legislacao", 2),
+            (r"\bMEDIDA\s+PROVIS[ÓO]RIA\b", "legislacao", 2),
+            (r"PRESID[ÊE]NCIA\s+DA\s+REP[ÚU]BLICA", "legislacao", 2),
+            (r"O\s+CONGRESSO\s+NACIONAL\s+decreta", "legislacao", 2),
+            (r"\bArt\.\s*1[ºo°]", "legislacao", 1),
+            (r"\bAC[ÓO]RD[ÃA]O\b", "jurisprudencia", 2),
+            (r"\bRELATOR[A]?\s*:", "jurisprudencia", 2),
+            (r"\bEMENTA\s*:", "jurisprudencia", 1),
+            (r"RECURSO\s+ESPECIAL|APELA[ÇC][ÃA]O\s+C[ÍI]VEL|"
+             r"AGRAVO\s+DE\s+INSTRUMENTO|HABEAS\s+CORPUS", "jurisprudencia", 2),
+            (r"\d{7}-?\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}", "jurisprudencia", 2),
+            (r"\bISBN\b", "livro", 2),
+            (r"©|\bCopyright\b", "livro", 1),
+            (r"\bSum[áa]rio\b", "livro", 1),
+            (r"\bPref[áa]cio\b", "livro", 1),
+            (r"\bDOI\s*:", "artigo_periodico", 2),
+            (r"\bAbstract\b|\bResumo\s*:", "artigo_periodico", 1),
+            (r"\bPORTARIA\s+N[ºo°\.]|\bINSTRU[ÇC][ÃA]O\s+NORMATIVA|"
+             r"\bRESOLU[ÇC][ÃA]O\s+N[ºo°\.]", "ato_administrativo", 2),
+            (r"EXCELENT[ÍI]SSIMO|Nestes\s+termos,?\s+pede\s+deferimento",
+             "peca_interna", 2),
+        ),
     ),
 }
 
@@ -302,6 +329,7 @@ TIPOS_POR_FONTE = PERFIL_ATIVO.tipos_por_fonte
 STATUS = PERFIL_ATIVO.status
 NATUREZA = PERFIL_ATIVO.natureza
 HEURISTICAS_TIPO = PERFIL_ATIVO.heuristicas_tipo
+HEURISTICAS_CONTEUDO = PERFIL_ATIVO.heuristicas_conteudo
 FONTES_POR_TIPO = _inverter(TIPOS_POR_FONTE)
 AREA_POR_CODIGO = _inverter(CODIGO_AREA)
 TIPO_POR_CODIGO = _inverter(CODIGO_TIPO)
@@ -431,10 +459,17 @@ def _autoteste():
            f"[{nome}] códigos de área duplicados")
         ok(len(set(p.codigo_tipo.values())) == len(p.codigo_tipo),
            f"[{nome}] códigos de tipo duplicados")
-        # heurísticas apontam para tipos_fonte conhecidos
+        # heurísticas apontam para tipos_fonte conhecidos e regexes compilam
         for chaves, tf in p.heuristicas_tipo:
             ok(tf in TIPOS_FONTE,
                f"[{nome}] heurística aponta p/ tipo_fonte órfão: {tf}")
+        for rx, tf, peso in p.heuristicas_conteudo:
+            ok(tf in TIPOS_FONTE,
+               f"[{nome}] heurística de conteúdo p/ tipo órfão: {tf}")
+            try:
+                re.compile(rx)
+            except re.error:
+                ok(False, f"[{nome}] regex inválida: {rx}")
 
     # dívida ⊆ obrigatórios
     for tf, campos in TOLERADOS.items():

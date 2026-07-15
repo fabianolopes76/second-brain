@@ -541,6 +541,7 @@ Sempre que um erro novo aparecer e for resolvido, registre aqui. Vale mais que q
 | Data | Ferramenta | Sintoma | Causa | Solução |
 |---|---|---|---|---|
 | 2026-07 | Docling | `ImportError: cannot import name 'Inf' from 'numpy'` | scipy do `apt` (antigo) × numpy 2.x do `pip --user` | venv isolado (A.2) |
+| 2026-07 | OCRmyPDF | "Some input metadata could not be copied because it is not permitted in PDF/A" no log, parecendo erro | **Aviso benigno**: metadados XMP malformados da origem não cabem no padrão PDF/A; o PDF gerado está válido e pesquisável. O log do painel misturava stderr sem classificar | `aplicar_ocr.sh` anota a mensagem como `AVISO (inofensivo)`; falha real agora sai com `rc` + motivo (`rc_motivo`); se só a conversão PDF/A falhar, o script tenta `--output-type pdf` para aquele arquivo |
 | | | | | |
 
 

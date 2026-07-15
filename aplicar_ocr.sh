@@ -136,97 +136,83 @@ montar_flags "${OCR_LANG_FALLBACK}"   # valores iniciais (sobrescritos por arqui
 #   iText do tribunal). O arquivo esta OK e pesquisavel; NAO e motivo p/ fallback.
 ocr_ok_rc() { [[ "$1" -eq 0 || "$1" -eq 10 ]]; }
 
-# run_ocr ENTRADA SAIDA : roda a estrategia principal; so cai no fallback
-# force-ocr se o arquivo NAO for gerado (falha real), nao por causa do PDF/A.
+# rc_motivo RC : traduz o codigo de saida do ocrmypdf. "FALHOU" seco nao diz
+# nada; o motivo vai para o log e para o controle.csv.
+rc_motivo() {
+    case "$1" in
+        0)  echo "ok" ;;
+        1)  echo "erro de argumentos/uso" ;;
+        2)  echo "arquivo de entrada invalido" ;;
+        3)  echo "dependencia ausente (tesseract/ghostscript?)" ;;
+        4)  echo "saida invalida" ;;
+        5)  echo "sem permissao de leitura/escrita" ;;
+        6)  echo "PDF de entrada corrompido" ;;
+        7)  echo "erro em processo filho (tesseract/ghostscript)" ;;
+        8)  echo "PDF criptografado" ;;
+        9)  echo "configuracao invalida" ;;
+        10) echo "PDF valido; so a conversao PDF/A falhou" ;;
+        15) echo "outro erro do ocrmypdf" ;;
+        130) echo "interrompido (Ctrl+C)" ;;
+        *)  echo "erro desconhecido" ;;
+    esac
+}
+
+# ocr_exec ARGS... : ocrmypdf com o stderr anotado. A mensagem "Some input
+# metadata could not be copied because it is not permitted in PDF/A" e um
+# AVISO BENIGNO (XMP malformado da origem nao cabe no PDF/A; o PDF gerado
+# esta valido e pesquisavel) — mas no log do painel ela parecia um erro.
+ocr_exec() {
+    ocrmypdf "$@" 2> >(sed \
+      's|.*metadata could not be copied because it is not permitted in PDF/A.*|AVISO (inofensivo): metadados XMP da origem nao cabem no PDF/A — o PDF gerado esta valido e pesquisavel.|' >&2)
+}
+
+# run_ocr ENTRADA SAIDA : estrategia principal; se a falha for na conversao
+# PDF/A (nao no OCR), tenta saida "pdf" comum SO para este arquivo; por fim,
+# fallback force-ocr. Deixa o rc final em RUN_OCR_RC para o chamador logar.
+RUN_OCR_RC=0
 run_ocr() {
     local rc
-    ocrmypdf "${OCR_FLAGS[@]}" "$1" "$2"; rc=$?
-    if ocr_ok_rc "$rc"; then return 0; fi
-    if [[ "$OCR_STRATEGY" != force-ocr ]]; then
-        echo "    (estrategia $OCR_STRATEGY falhou rc=$rc; tentando force-ocr)" >&2
-        ocrmypdf "${FALLBACK_FLAGS[@]}" "$1" "$2"; rc=$?
-        ocr_ok_rc "$rc" && return 0
+    ocr_exec "${OCR_FLAGS[@]}" "$1" "$2"; rc=$?
+    if ocr_ok_rc "$rc"; then RUN_OCR_RC=$rc; return 0; fi
+    echo "    (estrategia $OCR_STRATEGY falhou rc=$rc: $(rc_motivo "$rc"))" >&2
+    if [[ "$OUTPUT_TYPE" == pdfa ]]; then
+        echo "    (tentando novamente este arquivo com --output-type pdf)" >&2
+        ocr_exec "${OCR_FLAGS[@]/#pdfa/pdf}" "$1" "$2"; rc=$?
+        if ocr_ok_rc "$rc"; then RUN_OCR_RC=$rc; return 0; fi
     fi
+    if [[ "$OCR_STRATEGY" != force-ocr ]]; then
+        echo "    (tentando fallback force-ocr)" >&2
+        ocr_exec "${FALLBACK_FLAGS[@]}" "$1" "$2"; rc=$?
+        if ocr_ok_rc "$rc"; then RUN_OCR_RC=$rc; return 0; fi
+    fi
+    RUN_OCR_RC=$rc
     return 1
 }
 
-# csv_esc CAMPO : escapa aspas e envolve em aspas (RFC 4180).
-csv_esc() { local s=${1//\"/\"\"}; printf '"%s"' "$s"; }
-
-# inferir_tipo ARQUIVO : chuta o tipo_fonte ABNT pelo nome/pasta. E um PALPITE
-# para acelerar a triagem -- SEMPRE revise antes de usar.
-inferir_tipo() {
-    local nome; nome=$(echo "$1" | tr '[:upper:]' '[:lower:]')
-    case "$nome" in
-        *acordao*|*acórdão*|*resp*|*agravo*|*apela*|*habeas*|*sumula*|*súmula*|*jurisprud*)
-            echo "jurisprudencia" ;;
-        *lei*|*decreto*|*codigo*|*código*|*constituic*|*medida-provisoria*|*emenda*)
-            echo "legislacao" ;;
-        *portaria*|*instrucao-normativa*|*instrução*|*resolucao*|*resolução*|*edital*|*parecer*|*oficio*|*ofício*)
-            echo "ato_administrativo" ;;
-        *tese*|*dissertacao*|*dissertação*|*monografia*|*tcc*)
-            echo "trabalho_academico" ;;
-        *artigo*|*revista*|*periodico*|*periódico*)
-            echo "artigo_periodico" ;;
-        *peticao*|*petição*|*contestacao*|*contestação*|*recurso*|*minuta*|*contrato*)
-            echo "peca_interna" ;;
-        *)  echo "livro" ;;   # padrao: doutrina
-    esac
-}
-
-# exige_ancora TIPO : doutrina precisa de ancora de pagina; lei/acordao, nao.
-exige_ancora() {
-    case "$1" in
-        legislacao|jurisprudencia|ato_administrativo|peca_interna) echo "nao" ;;
-        *) echo "SIM" ;;
-    esac
-}
-
-# rota TIPO TEM_TEXTO : rota do WORKFLOW (A=ePUB/MOBI, B=PDF nativo, C=OCR).
-rota_de() {
-    local tem_texto="$1"
-    if [[ "$tem_texto" == "nao" ]]; then echo "C"; else echo "B"; fi
-}
+# -----------------------------------------------------------------------
+# Triagem (tipo_fonte, ancora, rota, linha do CSV): agora em triagem.py,
+# que le o vocabulario da FONTE UNICA (taxonomia.py). Este script deixou
+# de manter copia propria das heuristicas — era a 5a copia divergente.
+# A classificacao usa nome do arquivo + AMOSTRA do conteudo (1a/2a pagina
+# via pdftotext), e nao tem mais fallback cego para "livro".
+# -----------------------------------------------------------------------
+TRIAGEM="${TRIAGEM:-$(dirname "${BASH_SOURCE[0]}")/triagem.py}"
 
 csv_init() {
     [[ "$CSV" != 1 ]] && return 0
-    printf '%s\n' \
-      "arquivo,caminho,idioma,paginas,pgs_sem_texto,tem_camada_texto,precisou_ocr,ocr_status,arquivo_ocr,tipo_fonte_provavel,exige_ancora_pagina,rota,proximo_passo,area,status,confiabilidade" \
-      > "$CSV_FILE"
+    python3 "$TRIAGEM" --cabecalho > "$CSV_FILE"
     echo "Planilha    : $CSV_FILE"
 }
 
 # csv_add ARQ CAMINHO PGS VAZIAS TEM_TEXTO PRECISOU STATUS SAIDA [IDIOMA]
 csv_add() {
     [[ "$CSV" != 1 ]] && return 0
-    local arq="$1" cam="$2" pgs="$3" vaz="$4" temtxt="$5" prec="$6" stat="$7" saida="$8" idi="${9:-}"
-    local tipo anc rota prox
-    tipo=$(inferir_tipo "$arq")
-    anc=$(exige_ancora "$tipo")
-    rota=$(rota_de "$temtxt")
-    if [[ "$anc" == "SIM" ]]; then
-        prox="injetar_paginas.py"
-    else
-        prox="converter (sem ancora de pagina)"
+    local amostra=""
+    if [[ -n "${2:-}" && -f "$2" ]]; then
+        amostra=$(pdftotext -l 2 "$2" - 2>/dev/null | head -c 3000 || true)
     fi
-    {
-      csv_esc "$arq";   printf ','
-      csv_esc "$cam";   printf ','
-      csv_esc "$idi";   printf ','
-      printf '%s,%s,' "$pgs" "$vaz"
-      csv_esc "$temtxt"; printf ','
-      csv_esc "$prec";   printf ','
-      csv_esc "$stat";   printf ','
-      csv_esc "$saida";  printf ','
-      csv_esc "$tipo";   printf ','
-      csv_esc "$anc";    printf ','
-      csv_esc "$rota";   printf ','
-      csv_esc "$prox";   printf ','
-      csv_esc "";        printf ','
-      csv_esc "A-conferir"; printf ','
-      csv_esc "A-conferir"
-      printf '\n'
-    } >> "$CSV_FILE"
+    printf '%s' "$amostra" | python3 "$TRIAGEM" --linha \
+        "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "${9:-}" >> "$CSV_FILE"
 }
 
 # fmt_dur SEGUNDOS : formata duracao como XhYYmZZs / YmZZs / Zs.
@@ -415,9 +401,9 @@ for f in "${files[@]}"; do
             csv_add "$base_f" "$f" "$PG_TOTAL" "$PG_EMPTY" "$TEM_TXT" "$PRECISOU" "ok" "$f" "$LANG_F"
         else
             rm -f "$tmp"
-            echo "    FALHOU: $f | tempo: $(fmt_dur $((SECONDS-file_start)))" >&2
+            echo "    FALHOU (rc=$RUN_OCR_RC: $(rc_motivo "$RUN_OCR_RC")): $f | tempo: $(fmt_dur $((SECONDS-file_start)))" >&2
             ocr_fail=$((ocr_fail+1))
-            csv_add "$base_f" "$f" "$PG_TOTAL" "$PG_EMPTY" "$TEM_TXT" "$PRECISOU" "FALHOU" "" "$LANG_F"
+            csv_add "$base_f" "$f" "$PG_TOTAL" "$PG_EMPTY" "$TEM_TXT" "$PRECISOU" "FALHOU: $(rc_motivo "$RUN_OCR_RC")" "" "$LANG_F"
         fi
     else
         if run_ocr "$f" "$out"; then
@@ -426,9 +412,9 @@ for f in "${files[@]}"; do
             csv_add "$base_f" "$f" "$PG_TOTAL" "$PG_EMPTY" "$TEM_TXT" "$PRECISOU" "ok" "$out" "$LANG_F"
         else
             rm -f "$out" 2>/dev/null
-            echo "    FALHOU: $f | tempo: $(fmt_dur $((SECONDS-file_start)))" >&2
+            echo "    FALHOU (rc=$RUN_OCR_RC: $(rc_motivo "$RUN_OCR_RC")): $f | tempo: $(fmt_dur $((SECONDS-file_start)))" >&2
             ocr_fail=$((ocr_fail+1))
-            csv_add "$base_f" "$f" "$PG_TOTAL" "$PG_EMPTY" "$TEM_TXT" "$PRECISOU" "FALHOU" "" "$LANG_F"
+            csv_add "$base_f" "$f" "$PG_TOTAL" "$PG_EMPTY" "$TEM_TXT" "$PRECISOU" "FALHOU: $(rc_motivo "$RUN_OCR_RC")" "" "$LANG_F"
         fi
     fi
 done
