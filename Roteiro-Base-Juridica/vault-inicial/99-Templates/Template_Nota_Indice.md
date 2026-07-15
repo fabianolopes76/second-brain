@@ -1,24 +1,30 @@
 ---
 titulo: "«Título da obra/documento»"
-autor: "«Autor ou Órgão emissor»"
+autoria: ["«SOBRENOME, Prenome»", "«ou ÓRGÃO emissor»"]
+autoria_citacao: "«Sobrenome» | «Sobrenome; Sobrenome» | «Órgão»"
 area: [«Área1», «Área2»]
-tipo: «Doutrina | Legislação | Jurisprudência | Súmula | Parecer | Modelo | Artigo»
+tipo: «Doutrina | Legislação | Jurisprudência | Súmula | Artigo | Parecer | Modelo»
+tipo_fonte: «livro | livro_ebook_leitor | livro_ebook_online | capitulo_livro | artigo_periodico | trabalho_academico | evento | legislacao | jurisprudencia | ato_administrativo | documento_online | verbete | norma_tecnica | audiovisual | correspondencia | peca_interna»
 natureza: «Contencioso-Judicial | Contencioso-Administrativo | Consultivo | Extrajudicial»
 orgao: "«STF | STJ | TRF1 | TRT16 | TJMA | ... (vazio se doutrina)»"
 status: «Vigente | A-conferir | Revogado | Alterado | Superado | Modulado»
 ano: «AAAA»
-fonte: "«Editora / DJe / próprio-escritório»"
+editora: "«Editora (doutrina) — vazio se lei/julgado»"
+idioma: «por | eng | deu | fra | ita | spa»
+localizador_tipo: «pagina | posicao | artigo | secao | sem_localizador (conforme o tipo_fonte)»
+localizador_abrev: "«p. | local. | art. | seç. | (vazio)»"
+referencia_abnt: "«referência completa NBR 6023 — o validador gera uma sugestão»"
 confiabilidade: «Oficial | Doutrinária | Interna | A-conferir | Conferida»
 tags: [«instituto-1», «instituto-2»]
 resumo: "«3–8 linhas: do que trata, para que serve, o que a IA precisa saber para decidir relevância sem ler tudo.»"
 criado: {{date:YYYY-MM-DD}}
-partes: []
+partes: «N (número de fatias — o fatiar.py preenche sozinho)»
 ---
 
 # «Título da obra/documento»
 
 > [!info] Ficha
-> **Tipo:** «tipo» · **Área:** «área» · **Órgão:** «órgão» · **Ano:** «ano» · **Fonte:** «fonte»
+> **Tipo:** «tipo» · **Área:** «área» · **Órgão:** «órgão» · **Ano:** «ano» · **Editora:** «editora»
 
 <!-- Se aplicável, avise a vigência LOGO no topo para IA e equipe não citarem norma vencida: -->
 <!-- > [!warning] SUPERADO/REVOGADO pelo «Tema X do STJ / Lei nº ...» em «AAAA-MM-DD». -->
@@ -43,14 +49,21 @@ partes: []
 - [[«nota-de-instituto-relacionado»]]
 
 ## Conferência
-- [ ] Metadados completos e no padrão
+- [ ] Metadados completos e no padrão (rode `validar_yaml_abnt.py` — ele confere por tipo)
 - [ ] Vigência verificada (para legislação/súmula)
 - [ ] Citações críticas conferidas contra a fonte oficial
 - [ ] `confiabilidade` atualizada para `Conferida`
 
 <!-- ─────────────────────────────────────────────────────────────
-NOMENCLATURA DO ARQUIVO: [AREA]_[TIPO]_[ANO]_[Titulo-Curto]_[Autor].md
+VOCABULÁRIO: a fonte única é taxonomia.py (perfil ativo). Os valores nos
+placeholders acima espelham o perfil "juridico"; os campos obrigatórios
+variam por tipo_fonte — o validador cobra exatamente o que o tipo exige.
+
+NOMENCLATURA DO ARQUIVO: [AREA]_[TIPO]_[ANO]_[Titulo-Curto]_[Autor]_INDICE.md
 Ex.: TRIB_DOUT_2023_Curso-Direito-Tributario_Machado_INDICE.md
+Códigos (taxonomia.CODIGO_AREA / CODIGO_TIPO):
+  áreas: TRIB CIVIL PEN TRAB ADMIN CONST EMPR CONS PREV AMB FAM PROC ECON FIN INTL ELEI
+  tipos: DOUT LEGIS JURIS SUM ART PAR MODELO
 
 USO COM TEMPLATER (opcional): substitua os placeholders {{date:...}} por
 <% tp.date.now("YYYY-MM-DD") %> e, se quiser, o título por <% tp.file.title %>.

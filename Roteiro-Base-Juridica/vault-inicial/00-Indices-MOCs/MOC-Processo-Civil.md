@@ -17,7 +17,7 @@ data: 2026-07-07
 
 ## ✅ Vigente (pronto para uso)
 ```dataview
-TABLE WITHOUT ID file.link AS "Documento", tipo AS "Tipo", autor AS "Autor/Órgão", ano AS "Ano"
+TABLE WITHOUT ID file.link AS "Documento", tipo AS "Tipo", autoria_citacao AS "Autor/Órgão", ano AS "Ano"
 FROM -"99-Templates"
 WHERE contains(area, "Processual") AND (contains(tags, "processo-civil") OR contains(area, "Civil"))
   AND status = "Vigente" AND !parte
@@ -45,11 +45,11 @@ SORT status ASC
 
 ## 📚 Doutrina
 ```dataview
-TABLE WITHOUT ID file.link AS "Obra", autor AS "Autor", ano AS "Ano", fonte AS "Fonte"
+TABLE WITHOUT ID file.link AS "Obra", autoria_citacao AS "Autor", ano AS "Ano", editora AS "Editora"
 FROM -"99-Templates"
 WHERE contains(area, "Processual") AND (contains(tags, "processo-civil") OR contains(area, "Civil"))
   AND tipo = "Doutrina" AND !parte
-SORT autor ASC
+SORT autoria_citacao ASC
 ```
 
 ## ⚖️ Jurisprudência e precedentes qualificados
@@ -66,7 +66,7 @@ SORT ano DESC
 ```dataview
 TABLE WITHOUT ID file.link AS "Norma", status AS "Vigência", ano AS "Ano"
 FROM -"99-Templates"
-WHERE contains(area, "Processual") AND tipo = "Legislação" AND !parte
+WHERE contains(area, "Processual") AND (contains(tags, "processo-civil") OR contains(area, "Civil")) AND tipo = "Legislação" AND !parte
 SORT status ASC, ano DESC
 ```
 

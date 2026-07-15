@@ -1,10 +1,17 @@
 ---
 titulo: "«Título da obra» — «Capítulo/Título/Seção»"
 obra: "[[«PREFIXO_INDICE» | «Título da obra»]]"
-area: [«Área»]
-tipo: «Doutrina | Legislação | Jurisprudência»
 parte: «01»
-status: «Vigente | A-conferir | Revogado | Superado»
+area: [«Área»]
+tipo: «Doutrina | Legislação | Jurisprudência | Súmula | Artigo | Parecer | Modelo»
+tipo_fonte: «o mesmo da nota-índice (livro, legislacao, ...)»
+idioma: «por | eng | deu | fra | ita | spa»
+autoria_citacao: "«Sobrenome» (herdado da nota-índice)"
+ano: «AAAA»
+localizador_abrev: "«p. | local. | art. | (vazio)»"
+status: «Vigente | A-conferir | Revogado | Alterado | Superado | Modulado»
+pagina_inicio: «NN (primeira âncora da fatia)»
+pagina_fim: «NN (última âncora da fatia)»
 ---
 
 > **«Título da obra» · «Capítulo/Título/Seção» · «Área»** — fatia «01». Fonte: [[«PREFIXO_INDICE» | ficha da obra]].
@@ -27,6 +34,9 @@ Preserve numeração de artigos/incisos e notas de rodapé.»
 <!-- ─────────────────────────────────────────────────────────────
 NOMENCLATURA DO ARQUIVO: mesmo prefixo da nota-índice + _pNN
 Ex.: TRIB_DOUT_2023_Curso-Direito-Tributario_Machado_p01.md
+
+Estes campos espelham o que o fatiar.py gera automaticamente — o template
+serve para fatias criadas À MÃO; prefira rodar o script.
 
 REGRAS DE FATIAMENTO (Seção 6 do roteiro-base):
 - Doutrina: 1 fatia por capítulo (ou por seção, se o capítulo for muito longo).

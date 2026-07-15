@@ -21,7 +21,7 @@ Mapa de entrada do acervo tributário. Os painéis se atualizam sozinhos conform
 Tudo que está `Vigente` na área, por tipo.
 
 ```dataview
-TABLE WITHOUT ID file.link AS "Documento", tipo AS "Tipo", autor AS "Autor/Órgão", ano AS "Ano"
+TABLE WITHOUT ID file.link AS "Documento", tipo AS "Tipo", autoria_citacao AS "Autor/Órgão", ano AS "Ano"
 FROM -"99-Templates"
 WHERE contains(area, "Tributário") AND status = "Vigente" AND !parte
 SORT tipo ASC, ano DESC
@@ -49,10 +49,10 @@ SORT status ASC
 
 ## 📚 Doutrina
 ```dataview
-TABLE WITHOUT ID file.link AS "Obra", autor AS "Autor", ano AS "Ano", fonte AS "Fonte"
+TABLE WITHOUT ID file.link AS "Obra", autoria_citacao AS "Autor", ano AS "Ano", editora AS "Editora"
 FROM -"99-Templates"
 WHERE contains(area, "Tributário") AND tipo = "Doutrina" AND !parte
-SORT autor ASC
+SORT autoria_citacao ASC
 ```
 
 ## ⚖️ Jurisprudência (mais recente primeiro)
