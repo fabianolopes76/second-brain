@@ -32,6 +32,7 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
+from comum import vazio
 
 # ---------------------------------------------------------------------------
 # Vocabulário — fonte única: taxonomia.py. O que BLOQUEIA (erro) é
@@ -53,10 +54,6 @@ def ler_frontmatter(texto):
     """Parser único do pipeline — ver frontmatter.py."""
     fm = frontmatter.ler(texto)
     return fm.campos, fm.corpo
-
-
-def vazio(v):
-    return v is None or v == "" or v == [] or str(v).strip() in ("", "null")
 
 
 def sinais_de_ocr_sujo(corpo):

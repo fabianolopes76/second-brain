@@ -27,6 +27,7 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
+from comum import vazio
 
 # ---------------------------------------------------------------------------
 # Vocabulário — apenas referências à fonte única (taxonomia.py)
@@ -40,10 +41,6 @@ ANCORA_POS = taxonomia.ANCORA_POS
 def ler_frontmatter(texto: str) -> dict:
     """Parser único do pipeline — ver frontmatter.py."""
     return frontmatter.ler(texto).campos
-
-
-def vazio(v) -> bool:
-    return v is None or v == "" or v == [] or v == "null"
 
 
 def montar_referencia(d: dict) -> str:

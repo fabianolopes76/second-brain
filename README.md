@@ -1,6 +1,6 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
-**Versão 3.5.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+**Versão 3.5.1** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
 
 Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 
@@ -56,6 +56,7 @@ second-brain/
 │
 ├── taxonomia.py             ⭐ FONTE ÚNICA de vocabulário (núcleo ABNT × perfis de domínio)
 ├── frontmatter.py           Parser/serializador ÚNICO de frontmatter YAML
+├── comum.py                 Utilitários compartilhados (vazio, pastas ignoradas, wikilink)
 ├── triagem.py               Classificação de tipo (nome + conteúdo, com confiança)
 │
 ├── aplicar_ocr.sh           OCR em lote multi-idioma + controle.csv (triagem)

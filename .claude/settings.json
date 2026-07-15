@@ -61,7 +61,9 @@
       "Bash(python3 radar.py /tmp/radar-test --aplicar)",
       "Bash(chmod +x iniciar-acervo.sh)",
       "Bash(bash -n iniciar-acervo.sh)",
-      "Bash(git tag *)"
+      "Bash(git tag *)",
+      "Bash(awk -F: '{s+=$2} END {print \"funções totais:\", s}')",
+      "Bash(awk -F: '{s+=$2} END {print \"com anotação de tipo em parâmetro:\", s}')"
     ]
   }
 }

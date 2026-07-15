@@ -37,12 +37,10 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
+from comum import IGNORAR_PASTAS
 
 PADROES = [(rotulo, re.compile(rx, re.I))
            for rotulo, rx in taxonomia.PADROES_IDENTIFICADOR]
-
-IGNORAR_PASTAS = {"99-Templates", "Radar", ".obsidian", ".trash"}
-
 
 def identificadores(texto: str) -> set:
     """Extrai os identificadores fortes de um texto → {(rotulo, numero), ...}."""

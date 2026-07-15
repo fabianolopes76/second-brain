@@ -46,6 +46,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import comum
 import taxonomia
 import triagem
 
@@ -196,7 +197,8 @@ def diagnostico():
     # scripts
     for s in ["aplicar_ocr.sh", "injetar_paginas.py", "verificar_ancoras.py",
               "validar_yaml_abnt.py", "taxonomia.py", "frontmatter.py",
-              "triagem.py", "auditar_vault.py", "publicar.py", "radar.py"]:
+              "triagem.py", "auditar_vault.py", "publicar.py", "radar.py",
+              "comum.py"]:
         p = Path(CFG["scripts"]) / s
         itens.append({"nome": f"script {s}", "ok": p.exists(),
                       "dica": "" if p.exists() else f"não encontrado em {CFG['scripts']}"})
@@ -346,10 +348,9 @@ def progresso():
     r["publicado"] = False
     if vault.is_dir():
         # mesmo critério do auditar_vault.py: templates/radar não são notas
-        _fora = {"99-Templates", "Radar", ".obsidian", ".trash"}
         r["vault"] = sum(1 for f in vault.rglob("*.md")
                          if not f.name.startswith(("RELATORIO", "_"))
-                         and not any(p in _fora for p in f.parts))
+                         and not any(p in comum.IGNORAR_PASTAS for p in f.parts))
         r["publicado"] = (vault / "RELATORIO-PUBLICACAO.md").exists()
         r["vault_auditado"] = (vault / "RELATORIO-VAULT.md").exists()
         radar_dir = vault / "00-Indices-MOCs" / "Radar"

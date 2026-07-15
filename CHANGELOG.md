@@ -5,6 +5,25 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.5.1] — 2026-07-15 · Higiene interna (DRY nas bordas)
+
+### Adicionado
+- **`comum.py`** — utilitários compartilhados (`vazio`, `IGNORAR_PASTAS`,
+  regex `WIKILINK`, `alvo_wikilink`): a cópia única do que estava nascendo
+  duplicado em 3-4 módulos — o mesmo mecanismo que gerou os quatro parsers
+  divergentes que a v3.0.0 matou.
+
+### Alterado
+- `validar_yaml_abnt`, `auditar_acervo`, `auditar_vault`, `publicar`,
+  `radar` e o app passam a importar de `comum` (comportamento provado
+  idêntico contra o oráculo de regressão).
+- `triagem.py` usa `argparse` como os demais scripts (CLI compatível —
+  mesmas chamadas do `aplicar_ocr.sh`).
+
+### Corrigido
+- `publicar.py` fazia `import re` dentro de laço e refazia inline a
+  extração de wikilink que já existia no auditor de grafo.
+
 ## [3.5.0] — 2026-07-15 · Documentação visual e inicializadores
 
 ### Adicionado

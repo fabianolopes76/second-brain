@@ -129,33 +129,40 @@ def linha_csv(arq, caminho, pgs, vazias, tem_txt, precisou, status, saida,
 
 
 def main():
-    args = sys.argv[1:]
-    if "--cabecalho" in args:
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Classifica tipo_fonte (nome + conteúdo, com confiança) "
+                    "e emite linhas do controle.csv. Amostra de texto entra "
+                    "pela entrada padrão (stdin).")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--cabecalho", action="store_true",
+                   help="imprime o cabeçalho do controle.csv")
+    g.add_argument("--inferir", metavar="NOME",
+                   help="classifica um arquivo pelo nome (+ amostra via stdin)")
+    g.add_argument("--linha", nargs="+", metavar="CAMPO",
+                   help="emite uma linha do CSV: ARQ CAMINHO PGS VAZIAS "
+                        "TEM_TXT PRECISOU STATUS SAIDA [IDIOMA]")
+    a = ap.parse_args()
+
+    if a.cabecalho:
         print(CABECALHO)
         return 0
-    if "--inferir" in args:
-        nome = args[args.index("--inferir") + 1]
-        amostra = "" if sys.stdin.isatty() else sys.stdin.read()
-        tipo, conf, evid = inferir_tipo(nome, amostra)
+    amostra = "" if sys.stdin.isatty() else sys.stdin.read()
+    if a.inferir:
+        tipo, conf, evid = inferir_tipo(a.inferir, amostra)
         print(tipo or "(indeterminado)")
         print(f"confianca: {conf}", file=sys.stderr)
         for e in evid:
             print(f"  {e}", file=sys.stderr)
         return 0
-    if "--linha" in args:
-        pos = args[args.index("--linha") + 1:]
-        if len(pos) < 8:
-            print("uso: triagem.py --linha ARQ CAMINHO PGS VAZIAS TEM_TXT "
-                  "PRECISOU STATUS SAIDA [IDIOMA]  (amostra via stdin)",
-                  file=sys.stderr)
-            return 2
-        idioma = pos[8] if len(pos) > 8 else ""
-        amostra = "" if sys.stdin.isatty() else sys.stdin.read()
-        print(linha_csv(pos[0], pos[1], pos[2], pos[3], pos[4], pos[5],
-                        pos[6], pos[7], idioma, amostra))
-        return 0
-    print(__doc__)
-    return 2
+    if len(a.linha) < 8:
+        ap.error("--linha exige 8 campos: ARQ CAMINHO PGS VAZIAS TEM_TXT "
+                 "PRECISOU STATUS SAIDA [IDIOMA]")
+    pos = a.linha
+    idioma = pos[8] if len(pos) > 8 else ""
+    print(linha_csv(pos[0], pos[1], pos[2], pos[3], pos[4], pos[5],
+                    pos[6], pos[7], idioma, amostra))
+    return 0
 
 
 if __name__ == "__main__":

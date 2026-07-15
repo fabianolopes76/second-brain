@@ -37,11 +37,8 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
+from comum import alvo_wikilink, vazio
 from auditar_acervo import auditar, nota as nota_auditoria
-
-
-def vazio(v):
-    return v is None or v == "" or v == [] or str(v).strip() in ("", "null")
 
 
 def destino_de(fm, stem):
@@ -97,10 +94,7 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
 
         # ── destino ──
         if p["eh_fatia"]:
-            import re
-            m = re.search(r"\[\[([^\]|#]+)", str(fm.get("obra") or ""))
-            alvo = m.group(1).strip() if m else ""
-            rel = destino_indice.get(alvo)
+            rel = destino_indice.get(alvo_wikilink(fm.get("obra")))
             if rel is None:
                 rel, motivo = destino_de(fm, f.stem)   # órfã: roteia por conta própria
                 if rel is None:

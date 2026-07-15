@@ -42,11 +42,8 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
+from comum import IGNORAR_PASTAS, WIKILINK, alvo_wikilink, vazio
 
-# [[alvo]] · [[alvo|alias]] · [[alvo#seção]] — captura só o alvo
-WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
-
-IGNORAR_PASTAS = {"99-Templates", "Radar", ".obsidian", ".trash"}
 IGNORAR_PREFIXOS = ("RELATORIO", "_")
 
 
@@ -63,16 +60,6 @@ def carregar(vault: Path):
         notas.append({"path": p, "stem": p.stem, "fm": fm.campos,
                       "corpo": fm.corpo, "tem_fm": fm.presente})
     return notas
-
-
-def _alvo_obra(fm) -> str:
-    """Extrai o stem-alvo do campo `obra:` ("[[X]]" ou "[[X | alias]]")."""
-    m = WIKILINK.search(str(fm.get("obra") or ""))
-    return m.group(1).strip() if m else ""
-
-
-def vazio(v):
-    return v is None or v == "" or v == [] or str(v).strip() in ("", "null")
 
 
 def auditar_grafo(notas):
@@ -99,7 +86,7 @@ def auditar_grafo(notas):
             for a in (fm.get("area") or []):
                 areas_usadas[a] += 1
         if n["eh_fatia"]:
-            alvo = _alvo_obra(fm)
+            alvo = alvo_wikilink(fm.get("obra"))
             if alvo:
                 fatias_por_indice[alvo] += 1
 
@@ -120,7 +107,7 @@ def auditar_grafo(notas):
 
         # — fatia: a obra-mãe existe? —
         if n["eh_fatia"]:
-            alvo = _alvo_obra(fm)
+            alvo = alvo_wikilink(fm.get("obra"))
             if not alvo:
                 r["erros"].append("fatia com `obra:` sem wikilink válido")
             elif alvo not in existentes:
