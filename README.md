@@ -64,6 +64,7 @@ second-brain/
 ├── auditar_acervo.py        O arquivo gerado SERVE ao segundo cérebro? (nota por arquivo)
 ├── auditar_vault.py         O GRAFO do vault está íntegro? (ligações entre notas)
 ├── publicar.py              FASE 5 determinística: 3-MARKDOWN-LIMPO → vault, por regra
+├── gerar_moc.py             Cria/regenera MOCs preservando a curadoria manual
 ├── preparar.py              ⭐ RODE PRIMEIRO se baixou pelo Windows (conserta CRLF/+x)
 ├── corrigir_acervo.sh       Encadeia idioma+limpar+fatiar+auditar de uma vez
 │
@@ -172,6 +173,17 @@ python3 publicar.py 3-MARKDOWN-LIMPO/ 4-OBSIDIAN-VAULT/
 # VAULT VENCE (curadoria humana) — --force sobrescreve conscientemente.
 # Idempotente; gera RELATORIO-PUBLICACAO.md (contagens + itens A-conferir).
 
+# FASE 5 · MOCs — criar para uma área nova / regenerar os painéis
+python3 gerar_moc.py 4-OBSIDIAN-VAULT/ --area Civil
+python3 gerar_moc.py 4-OBSIDIAN-VAULT/ --regenerar-todos
+# O MOC tem duas camadas: painéis Dataview entre <!-- moc:auto:inicio/fim -->
+# (a regeneração reescreve SÓ isso) e a curadoria manual (mapa de institutos)
+# que o script NUNCA toca. O filtro de área é um predicado Dataview gravado
+# no frontmatter (moc_predicado) — áreas amplas usam filtro composto:
+python3 gerar_moc.py vault/ --area Processual --nome MOC-Processo-Civil \
+  --predicado 'contains(area, "Processual") AND (contains(tags, "processo-civil") OR contains(area, "Civil"))'
+# MOC antigo sem marcadores? --migrar insere-os sem alterar o conteúdo.
+
 # FASE 5+ · auditoria do GRAFO do vault (depois de publicar no Obsidian)
 python3 auditar_vault.py 4-OBSIDIAN-VAULT/ --detalhado
 # Erros = nota fora do grafo ou INVISÍVEL nos painéis (fatia órfã, partes:
@@ -266,7 +278,7 @@ Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é c
 1. Em `taxonomia.py`, adicione `PERFIS["meu_dominio"] = Perfil(...)` com: eixo `tipos`, `areas` (+chaves de busca), códigos, `tipos_por_fonte`, `status`, heurísticas de triagem do domínio.
 2. `ACERVO_PERFIL=meu_dominio` ativa o perfil (env var).
 3. Rode `python3 taxonomia.py --autoteste` — ele valida a integridade de *todos* os perfis.
-4. Crie os MOCs do domínio no vault (a estrutura Dataview é a mesma; só mudam áreas e predicados).
+4. Configure no perfil os campos de MOC (`status_ok`/`status_pendencia`/`status_superado`/`moc_grupos`) e de publicação (`pastas_publicacao`/`pastas_por_area`) — `gerar_moc.py` e `publicar.py` passam a falar o vocabulário do domínio sem nenhuma alteração de código.
 
 ### Convenções
 
@@ -281,7 +293,7 @@ Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é c
 | **1** | Taxonomia canônica (`taxonomia.py`) + parser único (`frontmatter.py`) + triagem por conteúdo (`triagem.py`) + robustez OCR + saneamento de 6 duplicações de vocabulário e 4 parsers | ✅ concluída (jul/2026) |
 | **2** | `auditar_vault.py` — validador de **grafo** do vault: fatia órfã, `partes:` inconsistente, wikilink quebrado, área sem MOC, par `tipo`/`tipo_fonte` incoerente (etapa 8 do app) | ✅ concluída (jul/2026) |
 | **3** | `publicar.py` — Fase 5 determinística: roteia `3-MARKDOWN-LIMPO` → vault por perfil, idempotente, travado em validação verde + travas de reexecução e badges com data no trilho do app | ✅ concluída (jul/2026) |
-| **4** | `gerar_moc.py` — scaffolder de MOC por predicado de área, com marcadores de bloco preservando a curadoria manual | planejada |
+| **4** | `gerar_moc.py` — scaffolder de MOC por predicado de área, com marcadores de bloco preservando a curadoria manual (MOCs existentes migrados) | ✅ concluída (jul/2026) |
 | **5** | Radar (etapa 9) — correlação determinística `Radar/` → notas afetadas (fila `A-conferir`); a descoberta/web fica no Cowork | planejada |
 
 ## Solução de problemas
