@@ -10,7 +10,9 @@ livro → página; e-book de leitor → posição (local.); lei → artigo;
 jurisprudência → o próprio julgado. Este script confere se o YAML tem o que o
 tipo exige, aponta o que falta e GERA a referência, evitando erro humano.
 
-Sem dependências externas (parser YAML mínimo, suficiente para o frontmatter).
+Sem dependências externas. O vocabulário (tipos, campos, localizadores) vem
+de taxonomia.py; o parser de frontmatter vem de frontmatter.py — fontes
+únicas de ambos, compartilhadas por todo o pipeline.
 
 Uso:
     python validar_yaml_abnt.py nota.md
@@ -23,148 +25,21 @@ import re
 import sys
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Regras por tipo de fonte: campos obrigatórios + localizador esperado
-# ---------------------------------------------------------------------------
-REGRAS = {
-    "livro": {
-        "obrigatorios": ["autoria", "titulo", "local_publicacao", "editora", "ano"],
-        "localizador": ("pagina", "p."),
-        "exige_ancora": True,
-    },
-    "livro_ebook_leitor": {
-        "obrigatorios": ["autoria", "titulo", "local_publicacao", "editora", "ano"],
-        "localizador": ("posicao", "local."),
-        "exige_ancora": True,
-        "aviso": "E-book de leitor: a 'posição' varia com o tamanho da fonte. "
-                 "Para citar em peça, prefira a edição impressa/PDF paginado.",
-    },
-    "livro_ebook_online": {
-        "obrigatorios": ["autoria", "titulo", "local_publicacao", "editora", "ano",
-                         "url", "data_acesso"],
-        "localizador": ("pagina", "p."),
-        "exige_ancora": True,
-    },
-    "capitulo_livro": {
-        "obrigatorios": ["autoria", "titulo", "autoria_todo", "titulo_todo",
-                         "local_publicacao", "editora", "ano",
-                         "pagina_inicio", "pagina_fim"],
-        "localizador": ("pagina", "p."),
-        "exige_ancora": True,
-    },
-    "artigo_periodico": {
-        "obrigatorios": ["autoria", "titulo", "titulo_periodico",
-                         "pagina_inicio", "pagina_fim", "ano"],
-        "localizador": ("pagina", "p."),
-        "exige_ancora": True,
-    },
-    "trabalho_academico": {
-        "obrigatorios": ["autoria", "titulo", "grau", "instituicao",
-                         "local_publicacao", "ano"],
-        "localizador": ("pagina", "p."),
-        "exige_ancora": True,
-    },
-    "evento": {
-        "obrigatorios": ["autoria", "titulo", "nome_evento", "ano_evento",
-                         "local_evento", "ano"],
-        "localizador": ("pagina", "p."),
-        "exige_ancora": True,
-    },
-    "legislacao": {
-        "obrigatorios": ["autoria", "norma_numero", "norma_data", "ementa", "ano"],
-        "localizador": ("artigo", "art."),
-        "exige_ancora": False,   # cita-se pelo dispositivo, não pela página
-    },
-    "jurisprudencia": {
-        "obrigatorios": ["orgao", "numero_processo", "relator", "data_julgamento"],
-        "localizador": ("sem_localizador", ""),
-        "exige_ancora": False,   # cita-se o julgado
-    },
-    "ato_administrativo": {
-        "obrigatorios": ["orgao_emissor", "especie_ato", "numero_ato", "data_ato"],
-        "localizador": ("artigo", "art."),
-        "exige_ancora": False,
-    },
-    "documento_online": {
-        "obrigatorios": ["titulo", "url", "data_acesso", "ano"],
-        "localizador": (None, None),   # variável
-        "exige_ancora": False,
-    },
-}
+import frontmatter
+import taxonomia
 
-ANCORA_PAG = re.compile(r"\{\{p\.[0-9ivxlcdm]+\}\}|<!--\s*p\.[0-9ivxlcdm]+\s*-->", re.I)
-ANCORA_POS = re.compile(r"\{\{loc\.\d+\}\}", re.I)
+# ---------------------------------------------------------------------------
+# Vocabulário — apenas referências à fonte única (taxonomia.py)
+# ---------------------------------------------------------------------------
+TIPOS_FONTE = taxonomia.TIPOS_FONTE
+ANCORA_PAG = taxonomia.ANCORA_PAG
+ANCORA_POS = taxonomia.ANCORA_POS
 
 
 # ---------------------------------------------------------------------------
-def _ler(texto):
-    """Parser de frontmatter que entende os blocos dobrados do YAML.
-
-    BUG CORRIGIDO: 'referencia_abnt: >' seguido de linhas indentadas é a forma
-    natural (e legível) de escrever textos longos em YAML. O parser antigo lia o
-    valor como literalmente ">", e a referência/resumo se perdiam.
-    Agora suporta '>' (dobrado, junta linhas) e '|' (literal, preserva quebras).
-    """
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", texto, re.DOTALL)
-    if not m:
-        return {}
-    linhas = m.group(1).splitlines()
-    dados, i = {}, 0
-    while i < len(linhas):
-        linha = linhas[i]
-        if not linha.strip() or linha.strip().startswith("#") or ":" not in linha:
-            i += 1
-            continue
-        chave, _, valor = linha.partition(":")
-        chave = chave.strip()
-        valor = valor.split(" #")[0].strip()
-
-        # bloco dobrado (>) ou literal (|): o valor vem nas linhas indentadas
-        if valor in (">", "|", ">-", "|-", ">+", "|+"):
-            corpo, i = [], i + 1
-            while i < len(linhas) and (not linhas[i].strip()
-                                       or linhas[i][:1] in (" ", "\t")):
-                corpo.append(linhas[i].strip())
-                i += 1
-            sep = " " if valor.startswith(">") else "\n"
-            dados[chave] = sep.join(c for c in corpo if c).strip()
-            continue
-
-        # lista em várias linhas:  tags:\n  [\n   "a",\n   "b",\n  ]
-        if valor == "" and i + 1 < len(linhas) and linhas[i + 1].strip().startswith("["):
-            bloco, i = "", i + 1
-            while i < len(linhas):
-                bloco += linhas[i].strip()
-                if "]" in linhas[i]:
-                    i += 1
-                    break
-                i += 1
-            itens = re.findall(r'"([^"]*)"|\'([^\']*)\'', bloco)
-            dados[chave] = [a or b for a, b in itens]
-            continue
-
-        # lista em linha:  area: [Tributário, Civil]
-        if valor.startswith("[") and valor.endswith("]"):
-            interno = valor[1:-1].strip()
-            citados = re.findall(r'"([^"]*)"|\'([^\']*)\'', interno)
-            dados[chave] = ([a or b for a, b in citados] if citados
-                            else [x.strip() for x in interno.split(",") if x.strip()])
-            i += 1
-            continue
-
-        valor = valor.strip('"').strip("'")
-        if valor.lower() in ("true", "false"):
-            dados[chave] = valor.lower() == "true"
-        elif valor.lower() in ("", "null", "~"):
-            dados[chave] = None
-        else:
-            dados[chave] = valor
-        i += 1
-    return dados
-
-
 def ler_frontmatter(texto: str) -> dict:
-    return _ler(texto)
+    """Parser único do pipeline — ver frontmatter.py."""
+    return frontmatter.ler(texto).campos
 
 
 def vazio(v) -> bool:
@@ -324,18 +199,18 @@ def validar(caminho: Path, gerar: bool) -> bool:
     t = d.get("tipo_fonte")
     if vazio(t):
         print("  ✗ Campo obrigatório ausente: tipo_fonte")
-        print(f"    Valores válidos: {', '.join(REGRAS)}")
+        print(f"    Valores válidos: {', '.join(TIPOS_FONTE)}")
         return False
-    if t not in REGRAS:
+    if t not in TIPOS_FONTE:
         print(f"  ✗ tipo_fonte desconhecido: '{t}'")
         return False
 
     print(f"  • tipo_fonte: {t}")
-    regra = REGRAS[t]
+    regra = TIPOS_FONTE[t]
     ok = True
 
     # 1) campos obrigatórios
-    faltando = [c for c in regra["obrigatorios"] if vazio(d.get(c))]
+    faltando = [c for c in regra.obrigatorios if vazio(d.get(c))]
     if faltando:
         print(f"  ✗ Campos obrigatórios vazios: {', '.join(faltando)}")
         print("    → Preencha ou marque confiabilidade: A-conferir. NÃO invente.")
@@ -349,7 +224,7 @@ def validar(caminho: Path, gerar: bool) -> bool:
         ok = False
 
     # 3) localizador coerente com o tipo
-    esperado_tipo, esperado_ab = regra["localizador"]
+    esperado_tipo, esperado_ab = regra.localizador
     if esperado_tipo:
         if d.get("localizador_tipo") != esperado_tipo:
             print(f"  ✗ localizador_tipo deveria ser '{esperado_tipo}' "
@@ -361,7 +236,7 @@ def validar(caminho: Path, gerar: bool) -> bool:
             ok = False
 
     # 4) âncoras no corpo, quando o tipo exige
-    if regra["exige_ancora"]:
+    if regra.exige_ancora:
         corpo = texto[len(re.match(r"^---.*?---\s*", texto, re.DOTALL).group(0)):] \
             if re.match(r"^---.*?---\s*", texto, re.DOTALL) else texto
         padrao = ANCORA_POS if esperado_tipo == "posicao" else ANCORA_PAG
@@ -373,8 +248,8 @@ def validar(caminho: Path, gerar: bool) -> bool:
         else:
             print(f"  ✓ Âncoras de {esperado_tipo}: {n}")
 
-    if regra.get("aviso"):
-        print(f"  ⚠ {regra['aviso']}")
+    if regra.aviso:
+        print(f"  ⚠ {regra.aviso}")
 
     # 5) referência
     ref_declarada = d.get("referencia_abnt", "")
