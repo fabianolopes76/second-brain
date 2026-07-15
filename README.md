@@ -63,6 +63,7 @@ second-brain/
 ├── validar_yaml_abnt.py     Valida o YAML por tipo_fonte + gera a referência ABNT
 ├── auditar_acervo.py        O arquivo gerado SERVE ao segundo cérebro? (nota por arquivo)
 ├── auditar_vault.py         O GRAFO do vault está íntegro? (ligações entre notas)
+├── publicar.py              FASE 5 determinística: 3-MARKDOWN-LIMPO → vault, por regra
 ├── preparar.py              ⭐ RODE PRIMEIRO se baixou pelo Windows (conserta CRLF/+x)
 ├── corrigir_acervo.sh       Encadeia idioma+limpar+fatiar+auditar de uma vez
 │
@@ -120,7 +121,10 @@ No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos d
 | 5 · Fatiar | Livro grande → nota-índice + fatias | `fatiar.py` |
 | 6 · Validar | Âncoras + YAML ABNT por tipo | `verificar_ancoras.py` + `validar_yaml_abnt.py` |
 | 7 · Auditar | O resultado serve ao segundo cérebro? (PRONTO/PARCIAL/REPROVADO) | `auditar_acervo.py` |
-| 8 · Auditar vault | O **grafo** do vault está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs | `auditar_vault.py` |
+| 8 · Publicar | Distribui `3-MARKDOWN-LIMPO` no vault por regra (tipo→pasta do perfil). **Simule primeiro** | `publicar.py` |
+| 9 · Auditar vault | O **grafo** do vault está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs | `auditar_vault.py` |
+
+O trilho tem duas proteções: refazer uma etapa **já concluída** pede confirmação explícita (reprocessar pode sobrescrever), e cada etapa feita mostra o **carimbo de data** da última execução (derivado do disco).
 
 Guia completo do app (incluindo processamento de arquivos avulsos, offset de página e navegador de pastas): **[LEIA-ME_APP.md](LEIA-ME_APP.md)**.
 
@@ -159,6 +163,15 @@ python3 verificar_ancoras.py bruto.md --comparar limpo.md   # nenhuma âncora pe
 python3 validar_yaml_abnt.py 3-MARKDOWN-LIMPO/ --gerar      # YAML por tipo + referência ABNT pronta
 python3 auditar_acervo.py 3-MARKDOWN-LIMPO/ --detalhado     # nota final por arquivo
 
+# FASE 5 · publicação determinística no vault (SEMPRE simule primeiro)
+python3 publicar.py 3-MARKDOWN-LIMPO/ 4-OBSIDIAN-VAULT/ --dry
+python3 publicar.py 3-MARKDOWN-LIMPO/ 4-OBSIDIAN-VAULT/
+# Roteia por tipo→pasta (perfil): Doutrina/Artigo→01-Doutrina/<Área>/,
+# Legislação/Parecer→02, Jurisprudência/Súmula→03, interno→04-Modelos-Internos.
+# Travas: nota REPROVADA não publica; copiar (nunca mover); em conflito o
+# VAULT VENCE (curadoria humana) — --force sobrescreve conscientemente.
+# Idempotente; gera RELATORIO-PUBLICACAO.md (contagens + itens A-conferir).
+
 # FASE 5+ · auditoria do GRAFO do vault (depois de publicar no Obsidian)
 python3 auditar_vault.py 4-OBSIDIAN-VAULT/ --detalhado
 # Erros = nota fora do grafo ou INVISÍVEL nos painéis (fatia órfã, partes:
@@ -191,7 +204,7 @@ ACERVO_ESTRITO=1 python3 auditar_acervo.py 3-MARKDOWN-LIMPO/
    ├── 01-Doutrina/  02-Legislacao/  03-Jurisprudencia/  04-Modelos-Internos/
    └── 99-Templates/       Template_Nota_Indice.md + Template_Fatia.md
    ```
-2. Copie `Roteiro-Base-Juridica/vault-inicial/` para dentro do vault (MOCs de Tributário e Processo Civil prontos + templates).
+2. Copie `Roteiro-Base-Juridica/vault-inicial/` para dentro do vault (MOCs de Tributário e Processo Civil prontos + templates). O conteúdo entra pelo `publicar.py` (etapa 8) — nunca arraste arquivos à mão: a publicação valida antes e respeita a curadoria existente.
 3. No Obsidian: instale o plugin **Dataview** → os painéis dos MOCs se preenchem sozinhos a partir do frontmatter.
 4. Convenções que os painéis assumem:
    - Notas-índice têm `partes:`; fatias têm `parte:` + `obra:` — os painéis filtram `!parte` para listar obras, não pedaços.
@@ -267,7 +280,7 @@ Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é c
 |---|---|---|
 | **1** | Taxonomia canônica (`taxonomia.py`) + parser único (`frontmatter.py`) + triagem por conteúdo (`triagem.py`) + robustez OCR + saneamento de 6 duplicações de vocabulário e 4 parsers | ✅ concluída (jul/2026) |
 | **2** | `auditar_vault.py` — validador de **grafo** do vault: fatia órfã, `partes:` inconsistente, wikilink quebrado, área sem MOC, par `tipo`/`tipo_fonte` incoerente (etapa 8 do app) | ✅ concluída (jul/2026) |
-| **3** | `publicar.py` — Fase 5 determinística: roteia `3-MARKDOWN-LIMPO` → vault por perfil, idempotente, travado em validação verde + travas de reexecução no trilho do app | planejada |
+| **3** | `publicar.py` — Fase 5 determinística: roteia `3-MARKDOWN-LIMPO` → vault por perfil, idempotente, travado em validação verde + travas de reexecução e badges com data no trilho do app | ✅ concluída (jul/2026) |
 | **4** | `gerar_moc.py` — scaffolder de MOC por predicado de área, com marcadores de bloco preservando a curadoria manual | planejada |
 | **5** | Radar (etapa 9) — correlação determinística `Radar/` → notas afetadas (fila `A-conferir`); a descoberta/web fica no Cowork | planejada |
 
