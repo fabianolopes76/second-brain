@@ -43,7 +43,9 @@
       "Bash(pdftotext -l 2 /tmp/teste-ocr/lei-teste-digitalizada_OCR.pdf -)",
       "Bash(python3 triagem.py --inferir \"documento-sem-nome-util.pdf\")",
       "Bash(python3 -m py_compile normalizar_yaml.py)",
-      "Bash(python3 normalizar_yaml.py corpus --dry)"
+      "Bash(python3 normalizar_yaml.py corpus --dry)",
+      "Bash(python3 auditar_vault.py corpus-vault --detalhado)",
+      "Bash(echo \"rc=$?\")"
     ]
   }
 }

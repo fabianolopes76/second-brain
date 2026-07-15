@@ -196,7 +196,7 @@ def diagnostico():
     # scripts
     for s in ["aplicar_ocr.sh", "injetar_paginas.py", "verificar_ancoras.py",
               "validar_yaml_abnt.py", "taxonomia.py", "frontmatter.py",
-              "triagem.py"]:
+              "triagem.py", "auditar_vault.py"]:
         p = Path(CFG["scripts"]) / s
         itens.append({"nome": f"script {s}", "ok": p.exists(),
                       "dica": "" if p.exists() else f"não encontrado em {CFG['scripts']}"})
@@ -308,7 +308,7 @@ def listar_pasta(caminho: str, modo: str = "dir"):
 def progresso():
     """Em que ponto do workflow o acervo está? Guia a UI e libera os passos."""
     r = {"pdfs": 0, "csv": 0, "ocr_pend": 0, "bruto": 0, "limpo": 0,
-         "fatias": 0, "auditado": False}
+         "fatias": 0, "auditado": False, "vault": 0, "vault_auditado": False}
     if not CFG["root"] or not Path(CFG["root"]).is_dir():
         return r
     base = Path(CFG["root"])
@@ -335,6 +335,15 @@ def progresso():
         if (pasta / "RELATORIO-AUDITORIA.md").exists():
             r["auditado"] = True
             break
+
+    vault = base / "4-OBSIDIAN-VAULT"
+    if vault.is_dir():
+        # mesmo critério do auditar_vault.py: templates/radar não são notas
+        _fora = {"99-Templates", "Radar", ".obsidian", ".trash"}
+        r["vault"] = sum(1 for f in vault.rglob("*.md")
+                         if not f.name.startswith(("RELATORIO", "_"))
+                         and not any(p in _fora for p in f.parts))
+        r["vault_auditado"] = (vault / "RELATORIO-VAULT.md").exists()
     return r
 
 
@@ -581,6 +590,21 @@ def acao_validar():
     return JOB.start("Validação (âncoras + YAML)", cmd)
 
 
+def acao_auditar_vault(pasta=""):
+    """Audita o GRAFO do vault: fatias órfãs, partes inconsistentes, wikilinks
+    quebrados, vocabulário que esconde notas dos painéis, áreas sem MOC."""
+    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "4-OBSIDIAN-VAULT")
+    if not alvo.is_dir():
+        return False, (f"Pasta do vault não encontrada: {alvo}. "
+                       "Publique o conteúdo no vault antes (Fase 5), ou "
+                       "informe o caminho no campo da etapa.")
+    av = Path(CFG["scripts"]) / "auditar_vault.py"
+    if not av.exists():
+        return False, "auditar_vault.py não encontrado na pasta de scripts."
+    cmd = f'python3 {shlex.quote(str(av))} {shlex.quote(str(alvo))} --detalhado'
+    return JOB.start(f"Auditar vault {alvo.name}", cmd)
+
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
@@ -711,6 +735,8 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = acao_auditar(data.get("pasta", ""))
             elif a == "validar":
                 ok, msg = acao_validar()
+            elif a == "auditar_vault":
+                ok, msg = acao_auditar_vault(data.get("pasta", ""))
             else:
                 ok, msg = False, "Ação desconhecida."
             return self._send(200, json.dumps({"ok": ok, "msg": msg}))
@@ -1127,6 +1153,28 @@ tr:hover td{background:var(--surf2)}
       </div>
     </div>
   </div>
+
+  <div class="fase">Publicação — o segundo cérebro no Obsidian</div>
+  <div class="trilho">
+    <div class="et" id="e8">
+      <div class="bar"><div class="dot">8</div><div class="linha"></div></div>
+      <div class="conteudo">
+        <div class="topo">
+          <h3>Auditar vault</h3>
+          <span class="desc">O <b>grafo</b> está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs.</span>
+          <span class="st" id="s8">—</span>
+          <div class="acoes">
+            <button class="bnav" onclick="abrirNav('vaultp','dir')">📁</button>
+            <button data-a class="primary" onclick="acao('auditar_vault',{pasta:vaultp.value})">Auditar vault</button>
+          </div>
+        </div>
+        <div class="extra">
+          <input type="text" id="vaultp" placeholder="(padrão: 4-OBSIDIAN-VAULT)">
+          <div class="dica">Metadado fora do vocabulário não gera erro no Obsidian — a nota simplesmente <b>some dos painéis</b>. Esta auditoria torna esse silêncio visível. Relatório: <b>RELATORIO-VAULT.md</b> no vault.</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- 04 LOG -->
@@ -1416,7 +1464,7 @@ function marcar(id, estadoEt, texto, classe){
 }
 function atualizarTrilho(p, temRoot){
   if(!temRoot){
-    for(let i=1;i<=7;i++) marcar('e'+i,'bloq','defina a pasta','');
+    for(let i=1;i<=8;i++) marcar('e'+i,'bloq','defina a pasta','');
     return;
   }
   // 1 triagem
@@ -1445,6 +1493,10 @@ function atualizarTrilho(p, temRoot){
   if(!p.bruto)          marcar('e7','bloq','converta antes','');
   else if(p.auditado)   marcar('e7','feito','relatório gerado','ok');
   else                  marcar('e7','ativa','pronto','pend');
+  // 8 auditar vault (grafo)
+  if(!p.vault)              marcar('e8','bloq','publique o vault antes','');
+  else if(p.vault_auditado) marcar('e8','feito', p.vault+' notas · relatório ok','ok');
+  else                      marcar('e8','ativa', p.vault+' notas no vault','pend');
 }
 
 /* ---------- estado ---------- */
