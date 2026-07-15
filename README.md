@@ -1,5 +1,7 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
+**Versão 3.5.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+
 Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 
 O primeiro perfil de uso é **jurídico** (doutrina, legislação, jurisprudência, com citação NBR 10520/6023), mas a arquitetura é **multi-domínio**: o núcleo do pipeline é neutro e cada área do conhecimento entra como um *perfil* — ver [Arquitetura](#arquitetura-núcleo--perfil).
@@ -46,6 +48,10 @@ Duas regras de ouro do domínio jurídico (perfil atual):
 ```
 second-brain/
 ├── acervo_app.py            ⭐ APP de gerenciamento (servidor local + painel no navegador)
+├── Iniciar-Acervo.bat       🖱️ Duplo-clique (Windows/WSL2): abre o painel sem terminal
+├── iniciar-acervo.sh        🖱️ Duplo-clique (Linux): idem
+├── GUIA-VISUAL.md           🖱️ Manual de uso SEM linha de comando (tela a tela)
+├── CHANGELOG.md             Histórico de versões (tags semânticas no git)
 ├── LEIA-ME_APP.md           Como rodar e usar o app
 │
 ├── taxonomia.py             ⭐ FONTE ÚNICA de vocabulário (núcleo ABNT × perfis de domínio)
@@ -104,7 +110,11 @@ deactivate
 
 ## Uso — pelo app (recomendado)
 
-O app orquestra o pipeline inteiro num painel de navegador, com um **trilho numerado** que lê o estado real do disco e mostra onde você está:
+O app orquestra o pipeline inteiro num painel de navegador, com um **trilho numerado** que lê o estado real do disco e mostra onde você está.
+
+**Sem terminal (recomendado para o dia a dia):** duplo-clique em **`Iniciar-Acervo.bat`** (Windows/WSL2) ou **`iniciar-acervo.sh`** (Linux) — o servidor sobe e o navegador abre sozinho. O passo a passo completo, tela a tela, está no **[Guia Visual](GUIA-VISUAL.md)**.
+
+Pelo terminal:
 
 ```bash
 cd ~/projects/second-brain
@@ -295,6 +305,7 @@ Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é c
 - Commits: um passo lógico por commit, mensagem explica o *porquê*; mudanças acopladas (ex.: template + MOC que exibe o campo) vão **no mesmo commit**.
 - Correção de bug: registre incidentes de ferramenta no [Apêndice A.7 do WORKFLOW](Roteiro-Base-Juridica/WORKFLOW.md).
 - Este README é atualizado **ao final de cada fase** do roadmap.
+- **Versionamento semântico** com tag git por release (`git tag -l`), documentado no [CHANGELOG.md](CHANGELOG.md): MENOR para cada fase/feature, CORREÇÃO para fixes, MAIOR para quebra de contrato (ex.: v3.0.0 = vocabulário centralizado). O `GUIA-VISUAL.md` acompanha a release.
 
 ## Roadmap
 

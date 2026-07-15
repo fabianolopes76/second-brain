@@ -58,7 +58,10 @@
       "Bash(python3 gerar_moc.py /tmp/moc-test --area Civil)",
       "Bash(python3 -m py_compile radar.py)",
       "Bash(python3 radar.py /tmp/radar-test)",
-      "Bash(python3 radar.py /tmp/radar-test --aplicar)"
+      "Bash(python3 radar.py /tmp/radar-test --aplicar)",
+      "Bash(chmod +x iniciar-acervo.sh)",
+      "Bash(bash -n iniciar-acervo.sh)",
+      "Bash(git tag *)"
     ]
   }
 }
