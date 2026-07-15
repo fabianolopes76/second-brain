@@ -35,33 +35,12 @@ import sys
 import unicodedata
 from pathlib import Path
 
-# Vocabulário controlado de áreas (o mesmo do ESQUEMA_YAML_ABNT.md).
-# A chave é o que se procura no texto; o valor é o termo canônico.
-AREAS = {
-    "tribut": "Tributário",
-    "fiscal": "Tributário",
-    "civil": "Civil",
-    "penal": "Penal",
-    "criminal": "Penal",
-    "trabalh": "Trabalhista",
-    "laboral": "Trabalhista",
-    "administrativ": "Administrativo",
-    "constitucional": "Constitucional",
-    "empresarial": "Empresarial",
-    "comercial": "Empresarial",
-    "societ": "Empresarial",
-    "consumidor": "Consumidor",
-    "previdenci": "Previdenciário",
-    "ambient": "Ambiental",
-    "famil": "Família",
-    "processual": "Processual",
-    "processo": "Processual",
-    "economic": "Econômico",
-    "econômic": "Econômico",
-    "financeir": "Financeiro",
-    "internacional": "Internacional",
-    "eleitoral": "Eleitoral",
-}
+import taxonomia
+
+# Vocabulário controlado de áreas — fonte única: o perfil ativo da taxonomia.
+# (A antiga cópia local tinha inclusive uma chave morta, "econômic", que o
+# sem_acento() duplicava em "economic".)
+AREAS = taxonomia.AREAS
 
 
 def sem_acento(s: str) -> str:
@@ -178,10 +157,34 @@ def normalizar(texto: str):
         i += 1
 
     # --- status: exigido pelos painéis do MOC ---
+    # A-conferir, NUNCA "Vigente": um script não pode afirmar vigência legal
+    # que não conhece (o docstring promete "não inventa dado"). A-conferir
+    # roteia a nota ao painel de pendências do MOC — onde nota não verificada
+    # pertence — até um humano decidir.
     if not any(re.match(r"^status\s*:", l) for l in novas):
-        conf = next((l for l in novas if l.startswith("confiabilidade")), "")
-        novas.append("status: Vigente")
-        mud.append("status: acrescentado (Vigente)")
+        novas.append("status: A-conferir")
+        mud.append("status: acrescentado (A-conferir — revisão humana decide)")
+
+    # --- censo de vocabulário: AVISA, nunca reescreve nem inventa ---
+    def _valor_de(chave):
+        for l in novas:
+            m2 = re.match(rf"^{chave}\s*:\s*(.+?)\s*$", l)
+            if m2:
+                return m2.group(1).split(" #")[0].strip().strip('"').strip("'")
+        return ""
+
+    st = _valor_de("status")
+    if st and st not in taxonomia.STATUS:
+        mud.append(f"⚠ status fora do vocabulário: '{st}' "
+                   f"(válidos: {', '.join(taxonomia.STATUS)})")
+    tp = _valor_de("tipo")
+    if tp and tp not in taxonomia.TIPOS and tp != "MOC":
+        mud.append(f"⚠ tipo fora do vocabulário: '{tp}' "
+                   f"(válidos: {', '.join(taxonomia.TIPOS)})")
+    cf = _valor_de("confiabilidade")
+    if cf and cf not in taxonomia.CONFIABILIDADE:
+        mud.append(f"⚠ confiabilidade fora do vocabulário: '{cf}' "
+                   f"(válidos: {', '.join(taxonomia.CONFIABILIDADE)})")
 
     return abre + "\n".join(novas) + fecha + resto, mud
 

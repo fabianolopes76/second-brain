@@ -41,7 +41,9 @@
       "Bash(MODE=manter ROOT=/tmp/teste-ocr CSV_FILE=/tmp/teste-ocr/controle.csv bash aplicar_ocr.sh)",
       "Bash(pdftotext /tmp/teste-ocr/lei-teste-digitalizada_OCR.pdf -)",
       "Bash(pdftotext -l 2 /tmp/teste-ocr/lei-teste-digitalizada_OCR.pdf -)",
-      "Bash(python3 triagem.py --inferir \"documento-sem-nome-util.pdf\")"
+      "Bash(python3 triagem.py --inferir \"documento-sem-nome-util.pdf\")",
+      "Bash(python3 -m py_compile normalizar_yaml.py)",
+      "Bash(python3 normalizar_yaml.py corpus --dry)"
     ]
   }
 }
