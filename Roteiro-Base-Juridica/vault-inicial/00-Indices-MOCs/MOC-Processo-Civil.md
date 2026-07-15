@@ -4,8 +4,8 @@ tipo: MOC
 area: [Processual]
 finalidade: "Porta de entrada navegável do acervo de processo civil, com painéis automáticos (Dataview)"
 data: 2026-07-07
+moc_predicado: 'contains(area, "Processual") AND (contains(tags, "processo-civil") OR contains(area, "Civil"))'
 ---
-
 # ⚙️ MOC — Direito Processual Civil
 
 > [!info] Pré-requisito
@@ -14,6 +14,8 @@ data: 2026-07-07
 > **Convenção de área para processo:** na taxonomia, `Processual` é a área ampla (abrange civil, penal, trabalhista…). Para isolar **processo civil**, os painéis filtram `contains(area, "Processual")` **e** exigem a tag `processo-civil` **ou** a área `Civil` junto. Ao catalogar uma obra de CPC, use por exemplo `area: [Processual, Civil]` **e** `tags: [processo-civil, ...]`. Assim o processo penal/trabalhista não polui este MOC.
 
 ---
+
+<!-- moc:auto:inicio — gerado por gerar_moc.py; edite FORA deste bloco -->
 
 ## ✅ Vigente (pronto para uso)
 ```dataview
@@ -86,6 +88,8 @@ FROM -"99-Templates"
 WHERE contains(area, "Processual") AND (contains(tags, "processo-civil") OR contains(area, "Civil")) AND !parte
 GROUP BY status
 ```
+
+<!-- moc:auto:fim -->
 
 ---
 

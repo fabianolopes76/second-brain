@@ -53,7 +53,9 @@
       "Bash(python3 publicar.py /tmp/pub/3-MARKDOWN-LIMPO /tmp/pub/4-OBSIDIAN-VAULT)",
       "Bash(python3 publicar.py /tmp/pub/3-MARKDOWN-LIMPO /tmp/pub/4-OBSIDIAN-VAULT --force)",
       "Bash(python3 auditar_vault.py /tmp/pub/4-OBSIDIAN-VAULT)",
-      "Bash(cp -p taxonomia.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)"
+      "Bash(cp -p taxonomia.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
+      "Bash(python3 -m py_compile gerar_moc.py)",
+      "Bash(python3 gerar_moc.py /tmp/moc-test --area Civil)"
     ]
   }
 }

@@ -4,8 +4,8 @@ tipo: MOC
 area: [Tributário]
 finalidade: "Porta de entrada navegável do acervo tributário, com painéis automáticos (Dataview)"
 data: 2026-07-07
+moc_predicado: 'contains(area, "Tributário")'
 ---
-
 # 🏛️ MOC — Direito Tributário
 
 > [!info] Pré-requisito
@@ -16,6 +16,8 @@ data: 2026-07-07
 Mapa de entrada do acervo tributário. Os painéis se atualizam sozinhos conforme você cataloga; a seção manual, no fim, guarda a curadoria dos institutos.
 
 ---
+
+<!-- moc:auto:inicio — gerado por gerar_moc.py; edite FORA deste bloco -->
 
 ## ✅ Vigente (pronto para uso)
 Tudo que está `Vigente` na área, por tipo.
@@ -88,6 +90,8 @@ FROM -"99-Templates"
 WHERE contains(area, "Tributário") AND !parte
 GROUP BY status
 ```
+
+<!-- moc:auto:fim -->
 
 ---
 

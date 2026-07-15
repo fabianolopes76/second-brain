@@ -189,6 +189,12 @@ class Perfil(NamedTuple):
     heuristicas_conteudo: tuple = ()   # (regex, tipo_fonte, peso) sobre o TEXTO
     pastas_publicacao: dict = {}       # tipo funcional → pasta no vault
     pastas_por_area: tuple = ()        # pastas que subdividem por área
+    # Painéis dos MOCs (gerar_moc.py): o vocabulário de status por FUNÇÃO
+    # e os agrupamentos de tipo que viram painéis de conteúdo.
+    status_ok: str = ""                # "pronto para uso"
+    status_pendencia: tuple = ()       # exige revisão humana
+    status_superado: tuple = ()        # não citar sem cautela
+    moc_grupos: tuple = ()             # ((título do painel, (tipos...)), ...)
 
 
 PERFIS = {
@@ -318,6 +324,14 @@ PERFIS = {
         },
         # 01-Doutrina subdivide por área (WORKFLOW Fase 5: "01-Doutrina/ (por área)")
         pastas_por_area=("01-Doutrina",),
+        status_ok="Vigente",
+        status_pendencia=("A-conferir",),
+        status_superado=("Revogado", "Superado", "Alterado", "Modulado"),
+        moc_grupos=(
+            ("📚 Doutrina", ("Doutrina", "Artigo")),
+            ("⚖️ Jurisprudência e precedentes", ("Jurisprudência", "Súmula")),
+            ("📜 Legislação", ("Legislação", "Parecer")),
+        ),
     ),
 }
 
@@ -474,6 +488,14 @@ def _autoteste():
             for pasta in p.pastas_por_area:
                 ok(pasta in p.pastas_publicacao.values(),
                    f"[{nome}] pastas_por_area cita pasta inexistente: {pasta}")
+        # MOC: status por função ⊆ status; grupos ⊆ tipos
+        if p.status_ok:
+            ok(p.status_ok in p.status, f"[{nome}] status_ok fora do vocabulário")
+        for s in p.status_pendencia + p.status_superado:
+            ok(s in p.status, f"[{nome}] status de painel fora do vocabulário: {s}")
+        for titulo_g, tipos_g in p.moc_grupos:
+            for t in tipos_g:
+                ok(t in p.tipos, f"[{nome}] moc_grupos com tipo fora do eixo: {t}")
         # códigos cobrem os vocabulários e são únicos
         areas_canonicas = set(p.areas.values())
         ok(set(p.codigo_area) == areas_canonicas,
