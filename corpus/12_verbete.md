@@ -9,6 +9,8 @@ idioma: por
 ano: 2021
 local_publicacao: "São Paulo"
 editora: "PUCSP"
+localizador_tipo: pagina
+localizador_abrev: "p."
 referencia_abnt: "ANTERIORIDADE tributária. In: Enciclopédia Jurídica da PUCSP. São Paulo: PUCSP, 2021."
 ---
 

@@ -9,6 +9,8 @@ idioma: por
 ano: 2018
 norma_numero: "NBR 6023"
 local_publicacao: "Rio de Janeiro"
+localizador_tipo: secao
+localizador_abrev: "seç."
 referencia_abnt: "ABNT. NBR 6023: informação e documentação — referências — elaboração. Rio de Janeiro: ABNT, 2018."
 ---
 

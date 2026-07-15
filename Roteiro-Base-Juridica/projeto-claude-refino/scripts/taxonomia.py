@@ -102,6 +102,43 @@ TIPOS_FONTE = {
         localizador=(None, None),   # variável
         exige_ancora=False,
     ),
+    # ── Tipos que o ESQUEMA_YAML_ABNT.md prometia e o validador rejeitava ──
+    "verbete": TipoFonte(
+        # Entrada pelo TÍTULO: verbete costuma ser anônimo — autoria NÃO é
+        # obrigatória (NBR 6023, elementos faltantes).
+        obrigatorios=("titulo", "titulo_todo", "local_publicacao",
+                      "editora", "ano"),
+        localizador=("pagina", "p."),
+        exige_ancora=False,   # verbetes são curtos; exigir {{p.NN}} reprovaria todos
+    ),
+    "norma_tecnica": TipoFonte(
+        obrigatorios=("autoria", "norma_numero", "titulo",
+                      "local_publicacao", "ano"),
+        localizador=("secao", "seç."),
+        exige_ancora=False,
+    ),
+    "audiovisual": TipoFonte(
+        obrigatorios=("titulo", "autoria", "ano", "suporte"),
+        localizador=("sem_localizador", ""),
+        exige_ancora=False,
+    ),
+    "correspondencia": TipoFonte(
+        obrigatorios=("autoria", "titulo", "destinatario",
+                      "local_publicacao", "data"),
+        localizador=("sem_localizador", ""),
+        exige_ancora=False,
+    ),
+    # ── Documento interno do escritório — fora do regime ABNT ──
+    # Antes era um tipo-fantasma: nascia no aplicar_ocr.sh, aparecia no CSV
+    # e na UI, mas nenhum vocabulário o conhecia e o validador o rejeitava.
+    # É a casa natural de `tipo: Modelo`.
+    "peca_interna": TipoFonte(
+        obrigatorios=("titulo",),
+        localizador=(None, None),   # interno: sem burocracia de localizador
+        exige_ancora=False,
+        aviso="Documento interno — fora do regime ABNT (não gera referência).",
+        abnt=False,
+    ),
 }
 
 # DÍVIDA DE MIGRAÇÃO — campos que a ABNT exige mas que o acervo atual ainda
@@ -208,6 +245,12 @@ PERFIS = {
             # escape hatch: documento online pode carregar qualquer eixo
             "documento_online": ("Doutrina", "Legislação", "Jurisprudência",
                                  "Súmula", "Artigo", "Parecer", "Modelo"),
+            "verbete": ("Doutrina",),
+            "norma_tecnica": ("Legislação", "Doutrina"),
+            "audiovisual": ("Doutrina", "Legislação", "Jurisprudência",
+                            "Súmula", "Artigo", "Parecer", "Modelo"),
+            "correspondencia": ("Parecer", "Modelo", "Doutrina"),
+            "peca_interna": ("Modelo", "Parecer"),
         },
         status=("Vigente", "A-conferir", "Revogado", "Alterado",
                 "Superado", "Modulado"),
@@ -369,7 +412,7 @@ def _autoteste():
     for nome, p in PERFIS.items():
         # todo tipo_fonte mapeado existe no núcleo, e vice-versa
         for tf in p.tipos_por_fonte:
-            ok(tf in TIPOS_FONTE or tf == "peca_interna",
+            ok(tf in TIPOS_FONTE,
                f"[{nome}] tipos_por_fonte tem tipo_fonte órfão: {tf}")
         for tf in TIPOS_FONTE:
             ok(tf in p.tipos_por_fonte,
@@ -388,9 +431,9 @@ def _autoteste():
            f"[{nome}] códigos de área duplicados")
         ok(len(set(p.codigo_tipo.values())) == len(p.codigo_tipo),
            f"[{nome}] códigos de tipo duplicados")
-        # heurísticas apontam para tipos_fonte conhecidos (ou peca_interna)
+        # heurísticas apontam para tipos_fonte conhecidos
         for chaves, tf in p.heuristicas_tipo:
-            ok(tf in TIPOS_FONTE or tf == "peca_interna",
+            ok(tf in TIPOS_FONTE,
                f"[{nome}] heurística aponta p/ tipo_fonte órfão: {tf}")
 
     # dívida ⊆ obrigatórios

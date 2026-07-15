@@ -18,7 +18,8 @@
       "Bash(git commit -q -m 'validar_yaml_abnt.py: migra para taxonomia + frontmatter \\(fonte única\\) *)",
       "Bash(python3 -m py_compile injetar_paginas.py)",
       "Bash(cp -p injetar_paginas.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
-      "Bash(git commit -q -m 'injetar_paginas.py: localizador vem da taxonomia; fim do default perigoso *)"
+      "Bash(git commit -q -m 'injetar_paginas.py: localizador vem da taxonomia; fim do default perigoso *)",
+      "Bash(python3 validar_yaml_abnt.py corpus)"
     ]
   }
 }

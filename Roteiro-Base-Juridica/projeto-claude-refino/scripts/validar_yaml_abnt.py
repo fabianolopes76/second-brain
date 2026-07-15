@@ -218,8 +218,10 @@ def validar(caminho: Path, gerar: bool) -> bool:
     else:
         print("  ✓ Campos obrigatórios completos")
 
-    # 2) data nunca falta (regra dura da ABNT)
-    if vazio(d.get("ano")) and t not in ("jurisprudencia",):
+    # 2) data nunca falta (regra dura da ABNT) — exigida quando o próprio tipo
+    # lista `ano` entre os obrigatórios (jurisprudência e correspondência,
+    # p.ex., datam-se pelo julgado/data, não pelo ano editorial)
+    if "ano" in regra.obrigatorios and vazio(d.get("ano")):
         print("  ✗ ANO ausente. Na ABNT a data NUNCA falta — use [1969?], [ca. 1960], [197-].")
         ok = False
 
@@ -230,7 +232,10 @@ def validar(caminho: Path, gerar: bool) -> bool:
             print(f"  ✗ localizador_tipo deveria ser '{esperado_tipo}' "
                   f"(está: '{d.get('localizador_tipo')}')")
             ok = False
-        if d.get("localizador_abrev") != esperado_ab:
+        # None ≡ "" : o parser converte `localizador_abrev: ""` em None; sem
+        # esta equivalência, nenhum tipo com abreviação vazia (jurisprudência,
+        # audiovisual…) passava jamais na checagem — erro falso histórico.
+        if (d.get("localizador_abrev") or "") != esperado_ab:
             print(f"  ✗ localizador_abrev deveria ser '{esperado_ab}' "
                   f"(está: '{d.get('localizador_abrev')}')")
             ok = False
@@ -250,6 +255,12 @@ def validar(caminho: Path, gerar: bool) -> bool:
 
     if regra.aviso:
         print(f"  ⚠ {regra.aviso}")
+
+    # Documento interno (abnt=False): não há referência nem citação a montar.
+    if not regra.abnt:
+        if ok:
+            print("  ✓ YAML válido para o tipo (interno, sem referência ABNT)")
+        return ok
 
     # 5) referência
     ref_declarada = d.get("referencia_abnt", "")
