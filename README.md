@@ -65,6 +65,7 @@ second-brain/
 ├── auditar_vault.py         O GRAFO do vault está íntegro? (ligações entre notas)
 ├── publicar.py              FASE 5 determinística: 3-MARKDOWN-LIMPO → vault, por regra
 ├── gerar_moc.py             Cria/regenera MOCs preservando a curadoria manual
+├── radar.py                 FASE 6: correlaciona achados do radar às notas (por identificador)
 ├── preparar.py              ⭐ RODE PRIMEIRO se baixou pelo Windows (conserta CRLF/+x)
 ├── corrigir_acervo.sh       Encadeia idioma+limpar+fatiar+auditar de uma vez
 │
@@ -124,6 +125,7 @@ No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos d
 | 7 · Auditar | O resultado serve ao segundo cérebro? (PRONTO/PARCIAL/REPROVADO) | `auditar_acervo.py` |
 | 8 · Publicar | Distribui `3-MARKDOWN-LIMPO` no vault por regra (tipo→pasta do perfil). **Simule primeiro** | `publicar.py` |
 | 9 · Auditar vault | O **grafo** do vault está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs | `auditar_vault.py` |
+| 10 · Radar | Correlaciona os achados de `Radar/` (Cowork) às notas que os citam; sinaliza `A-conferir` | `radar.py` |
 
 O trilho tem duas proteções: refazer uma etapa **já concluída** pede confirmação explícita (reprocessar pode sobrescrever), e cada etapa feita mostra o **carimbo de data** da última execução (derivado do disco).
 
@@ -190,6 +192,14 @@ python3 auditar_vault.py 4-OBSIDIAN-VAULT/ --detalhado
 # inconsistente, tipo/status fora do vocabulário, sem area, par tipo/tipo_fonte
 # incoerente, nome duplicado). Avisos = higiene (wikilink quebrado, área sem
 # MOC, nome fora do padrão). Gera RELATORIO-VAULT.md no vault; exit 1 se erro.
+
+# FASE 6 · radar — o Cowork (Módulo E) alimenta Radar/; a correlação é por regra
+python3 radar.py 4-OBSIDIAN-VAULT/              # fila de revisão (não altera notas)
+python3 radar.py 4-OBSIDIAN-VAULT/ --aplicar    # sinaliza afetadas com A-conferir
+# Extrai identificadores (Lei/Decreto/MP/EC/Tema/Súmula/nº CNJ) do achado E
+# das notas e cruza — nunca palpite. O radar SINALIZA; reclassificar
+# (Revogado/Superado) é decisão humana, no ritual semanal. Idempotente
+# entre ciclos (Radar/.radar_estado.json).
 
 # Utilitários
 python3 normalizar_yaml.py pasta/ --dry     # normaliza area/tags/autoria (veja antes de gravar)
@@ -294,7 +304,7 @@ Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é c
 | **2** | `auditar_vault.py` — validador de **grafo** do vault: fatia órfã, `partes:` inconsistente, wikilink quebrado, área sem MOC, par `tipo`/`tipo_fonte` incoerente (etapa 8 do app) | ✅ concluída (jul/2026) |
 | **3** | `publicar.py` — Fase 5 determinística: roteia `3-MARKDOWN-LIMPO` → vault por perfil, idempotente, travado em validação verde + travas de reexecução e badges com data no trilho do app | ✅ concluída (jul/2026) |
 | **4** | `gerar_moc.py` — scaffolder de MOC por predicado de área, com marcadores de bloco preservando a curadoria manual (MOCs existentes migrados) | ✅ concluída (jul/2026) |
-| **5** | Radar (etapa 9) — correlação determinística `Radar/` → notas afetadas (fila `A-conferir`); a descoberta/web fica no Cowork | planejada |
+| **5** | Radar (etapa 10) — correlação determinística `Radar/` → notas afetadas (fila `A-conferir`); a descoberta/web fica no Cowork | ✅ concluída (jul/2026) |
 
 ## Solução de problemas
 
