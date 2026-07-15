@@ -7,7 +7,13 @@
       "Bash(cp -p acervo_app.py Roteiro-Base-Juridica/_scripts/acervo_app.py)",
       "Bash(cp -p validar_yaml_abnt.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/validar_yaml_abnt.py)",
       "Bash(python3 -m py_compile Roteiro-Base-Juridica/_scripts/acervo_app.py)",
-      "Bash(python3 -)"
+      "Bash(python3 -)",
+      "Bash(python3 normalizar_yaml.py --help)",
+      "Bash(python3 fatiar.py --help)",
+      "Bash(git commit -q -m 'corpus de caracterização: 17 fixtures para oráculo de regressão *)",
+      "Bash(python3 taxonomia.py --autoteste)",
+      "Bash(cp -p taxonomia.py frontmatter.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
+      "Bash(git commit -q -m 'taxonomia.py + frontmatter.py: fonte única de vocabulário e parser único *)"
     ]
   }
 }
