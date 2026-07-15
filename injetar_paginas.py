@@ -37,6 +37,8 @@ import re
 import sys
 from pathlib import Path
 
+import taxonomia
+
 try:
     import fitz  # PyMuPDF
 except ImportError:
@@ -112,17 +114,13 @@ def main():
 
     corpo = "\n\n".join(partes)
 
-    # Localizador conforme o tipo (doutrina -> página; lei -> artigo; acórdão -> nenhum)
-    LOCALIZADOR = {
-        "livro": ("pagina", "p."), "livro_ebook_online": ("pagina", "p."),
-        "livro_ebook_leitor": ("posicao", "local."),
-        "capitulo_livro": ("pagina", "p."), "artigo_periodico": ("pagina", "p."),
-        "trabalho_academico": ("pagina", "p."), "evento": ("pagina", "p."),
-        "legislacao": ("artigo", "art."), "ato_administrativo": ("artigo", "art."),
-        "jurisprudencia": ("sem_localizador", ""),
-    }
+    # Localizador conforme o tipo — fonte única: taxonomia.py.
+    # Tipo desconhecido ou de localizador variável NÃO ganha localizador
+    # inferido: carimbar "pagina" num tipo errado fazia o validador rejeitar
+    # o arquivo depois. Melhor admitir a dúvida do que inventar.
     tf = args.tipo_fonte.strip()
-    loc_tipo, loc_ab = LOCALIZADOR.get(tf, ("pagina", "p."))
+    _regra = taxonomia.TIPOS_FONTE.get(tf)
+    loc_tipo, loc_ab = _regra.localizador if _regra else (None, None)
 
     NOMES = {"por": "português", "eng": "inglês", "deu": "alemão",
              "fra": "francês", "ita": "italiano", "spa": "espanhol"}
@@ -138,10 +136,14 @@ def main():
                   f'# ATENCAO: obra em {NOMES[idi]} — NAO traduzir nem "corrigir" o texto.\n'
                   f'# Edicao segue a lingua do documento: {EDICAO[idi]}\n')
     if tf:
-        extra += (f'tipo_fonte: {tf}                 # palpite da triagem — REVISE\n'
-                  f"localizador_tipo: {loc_tipo}\n"
-                  f'localizador_abrev: "{loc_ab}"\n'
-                  'sistema_chamada: ambos\n'
+        extra += f'tipo_fonte: {tf}                 # palpite da triagem — REVISE\n'
+        if loc_tipo is not None:
+            extra += (f"localizador_tipo: {loc_tipo}\n"
+                      f'localizador_abrev: "{loc_ab}"\n')
+        elif _regra is None:
+            extra += ('# tipo_fonte desconhecido pela taxonomia — localizador '
+                      'NAO inferido; defina manualmente\n')
+        extra += ('sistema_chamada: ambos\n'
                   'norma_citacao: "NBR 10520:2023"\n')
 
     cabecalho = (

@@ -15,7 +15,10 @@
       "Bash(cp -p taxonomia.py frontmatter.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
       "Bash(git commit -q -m 'taxonomia.py + frontmatter.py: fonte única de vocabulário e parser único *)",
       "Bash(cp -p validar_yaml_abnt.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
-      "Bash(git commit -q -m 'validar_yaml_abnt.py: migra para taxonomia + frontmatter \\(fonte única\\) *)"
+      "Bash(git commit -q -m 'validar_yaml_abnt.py: migra para taxonomia + frontmatter \\(fonte única\\) *)",
+      "Bash(python3 -m py_compile injetar_paginas.py)",
+      "Bash(cp -p injetar_paginas.py Roteiro-Base-Juridica/projeto-claude-refino/scripts/)",
+      "Bash(git commit -q -m 'injetar_paginas.py: localizador vem da taxonomia; fim do default perigoso *)"
     ]
   }
 }
