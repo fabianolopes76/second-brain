@@ -135,6 +135,27 @@ def win_para_wsl(caminho: str) -> str:
     return c.replace("\\", "/")
 
 
+_JBIG2_TEM_APT = None
+
+
+def _dica_jbig2():
+    """Comando de instalação do jbig2enc que FUNCIONA nesta distro.
+
+    'sudo apt install jbig2enc' só existe no Ubuntu 23.04+/Debian 12+;
+    no 22.04 dava "Unable to locate package". A disponibilidade é checada
+    uma única vez (o diagnóstico roda a cada poll de 1,5 s)."""
+    global _JBIG2_TEM_APT
+    if _JBIG2_TEM_APT is None:
+        r = subprocess.run(
+            ["bash", "-c",
+             "apt-cache policy jbig2enc 2>/dev/null | grep -q 'Candidate: [0-9]'"],
+            capture_output=True)
+        _JBIG2_TEM_APT = (r.returncode == 0)
+    if _JBIG2_TEM_APT:
+        return "sudo apt install -y jbig2enc"
+    return f"bash {shlex.quote(str(Path(CFG['scripts']) / 'instalar-jbig2enc.sh'))}"
+
+
 def diagnostico():
     """Confere o ambiente e devolve a lista de checagens."""
     itens = []
@@ -148,8 +169,10 @@ def diagnostico():
     check("tesseract (por)", "tesseract", "sudo apt install -y tesseract-ocr-por")
     check("poppler (pdftotext)", "pdftotext", "sudo apt install -y poppler-utils")
     check("unpaper (flag --clean)", "unpaper", "sudo apt install -y unpaper")
-    # opcional, mas o padrao OPTIMIZE=3 o recomenda: sem ele o PDF sai maior
-    check("jbig2enc (compressão do PDF)", "jbig2", "sudo apt install -y jbig2enc")
+    # opcional, mas o padrao OPTIMIZE=3 o recomenda: sem ele o PDF sai maior.
+    # Ubuntu <= 22.04 NAO tem o pacote apt — a dica vira o instalador do
+    # projeto (tenta apt; sem pacote, compila de github.com/agl/jbig2enc).
+    check("jbig2enc (compressão do PDF)", "jbig2", _dica_jbig2())
 
     # Idiomas do Tesseract (acervo multilíngue: pt/en/de/fr/it/es)
     try:

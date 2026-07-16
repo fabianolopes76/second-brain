@@ -105,7 +105,12 @@
       "Bash(rm -f /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/3-MARKDOWN-LIMPO/*.bak)",
       "Bash(python3 publicar.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/3-MARKDOWN-LIMPO /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/vault-simulado --dry)",
       "Bash(~/venvs/acervo/bin/python injetar_paginas.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -o /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/nascimento.md --tipo-fonte legislacao --idioma por)",
-      "Bash(~/venvs/acervo/bin/python injetar_paginas.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -o /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/nascimento2.md --tipo-fonte jurisprudencia --idioma por)"
+      "Bash(~/venvs/acervo/bin/python injetar_paginas.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -o /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/nascimento2.md --tipo-fonte jurisprudencia --idioma por)",
+      "Bash(lsb_release -ds)",
+      "Bash(apt-cache policy *)",
+      "Bash(sudo -n true)",
+      "Bash(command -v git make gcc automake libtool)",
+      "Bash(dpkg -l libleptonica-dev)"
     ]
   }
 }

@@ -155,6 +155,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | Mensagens `x-www-browser: not found` … ao iniciar (WSL2) | Versão antiga do inicializador — atualize para a v3.5.2+ (`git pull`). O servidor funcionava; só a abertura automática falhava. |
 | Fechei a janela preta sem querer | O painel cai. Duplo-clique de novo no `Iniciar-Acervo.bat`. |
 | `Address already in use` ao iniciar | O painel **já estava aberto** — na v3.8.1+ o inicializador percebe e só abre o navegador. Para reiniciar de verdade (ex.: após atualizar), feche a janela anterior do servidor e inicie de novo. |
+| `E: Unable to locate package jbig2enc` | Ubuntu até o 22.04 **não tem** esse pacote no apt. Use o instalador do projeto: `bash instalar-jbig2enc.sh` (é o comando que o ⚙ Ambiente mostra na v3.10.1+) — ele instala as dependências e compila da fonte oficial. |
 | "Já há uma tarefa em execução" | O painel roda um trabalho por vez. Acompanhe a seção 04 e aguarde o `--- fim ---`. |
 | Etapa cinza (bloqueada) | O texto ao lado diz o que falta (ex.: "faça a triagem"). O trilho é em ordem. |
 | Apareceu `AVISO (inofensivo)` no log | Ignorar — está explicado no próprio log. O arquivo saiu correto. Exemplos: metadados que não cabem no PDF/A; camada de texto ruim da origem (o OCR a substitui); jbig2enc ausente (PDF sai maior — instale pelo ⚙ Ambiente). |

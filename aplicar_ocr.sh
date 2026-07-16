@@ -180,7 +180,7 @@ anotar_ocr_stderr() {
         next }
     /Output may be incorrect/ { next }
     /could not be executed or was not found/ && /jbig2/ {
-        print "AVISO (inofensivo): jbig2enc nao instalado — o PDF sai valido, porem MAIOR (sem compressao JBIG2). Para instalar: sudo apt install -y jbig2enc"; fflush()
+        print "AVISO (inofensivo): jbig2enc nao instalado — o PDF sai valido, porem MAIOR (sem compressao JBIG2). Para instalar: bash instalar-jbig2enc.sh (na pasta do projeto; ver ⚙ Ambiente)"; fflush()
         jb=1; jbn=0; next }
     jb { jbn++; if (/installing the RPM for jbig2/ || jbn > 14) jb=0; next }
     { print; fflush() }'

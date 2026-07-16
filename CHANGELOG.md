@@ -5,6 +5,17 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.10.1] — 2026-07-16 · jbig2enc: instalador que funciona no Ubuntu ≤ 22.04
+
+### Corrigido
+- **A dica `sudo apt install -y jbig2enc` não funcionava** ("Unable to
+  locate package"): o pacote só existe no Ubuntu 23.04+/Debian 12+.
+  Novo **`instalar-jbig2enc.sh`**: tenta o apt onde há pacote; sem ele,
+  instala as dependências de compilação e compila da fonte oficial
+  (github.com/agl/jbig2enc) — um comando só, com sudo pedido na hora.
+  O ⚙ Ambiente agora mostra o comando certo para a distro (checado uma
+  vez e cacheado), e o aviso no log do OCR aponta o instalador.
+
 ## [3.10.0] — 2026-07-16 · Publicação: relatório legível, `tipo` derivável e fatias sem órfãs
 
 Incidente investigado: publicar 715 notas bloqueadas gerou **715 linhas
