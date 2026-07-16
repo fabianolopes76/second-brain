@@ -5,6 +5,17 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.8.1] — 2026-07-16 · Inicializador reaproveita o painel já aberto
+
+### Corrigido
+- **`./iniciar-acervo.sh` morria com traceback (`Address already in use`)**
+  quando o painel já estava rodando (janela anterior aberta, ou o
+  inicializador executado duas vezes). Agora ele detecta o painel no ar,
+  **só abre o navegador** e explica como reiniciar quando for preciso
+  (ex.: após atualizar). O próprio `acervo_app.py` também troca o
+  traceback por uma mensagem com as três saídas (abrir o navegador,
+  `pkill -f acervo_app.py`, ou `--port` alternativa).
+
 ## [3.8.0] — 2026-07-16 · Acompanhamento nos cards, ajuda por etapa e correções de conversão/idioma
 
 ### Adicionado

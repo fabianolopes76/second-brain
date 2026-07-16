@@ -40,6 +40,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1948,7 +1949,21 @@ def main():
     CFG["scripts"] = win_para_wsl(a.scripts)
     CFG["venv"] = win_para_wsl(a.venv)
 
-    srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)
+    try:
+        srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)
+    except OSError as e:
+        if e.errno == 98:  # EADDRINUSE — quase sempre é o próprio painel já aberto
+            sys.exit(
+                f"\nA porta {a.port} já está em uso — o painel provavelmente JÁ "
+                f"está no ar.\n"
+                f"  · Abra no navegador: http://localhost:{a.port}\n"
+                f"  · Para reiniciar (ex.: após atualizar): feche a janela "
+                f"anterior ou rode\n"
+                f"      pkill -f acervo_app.py\n"
+                f"    e execute de novo.\n"
+                f"  · Ou suba em outra porta: python3 acervo_app.py --port "
+                f"{a.port + 1}\n")
+        raise
     print("=" * 62)
     print("  Acervo — pipeline do segundo cérebro (WSL2)")
     print("=" * 62)

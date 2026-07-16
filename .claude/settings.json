@@ -90,7 +90,10 @@
       "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO --pdfs /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2)",
       "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO --forcar por)",
       "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO/resolucao_escaneada.md --forcar xx)",
-      "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO/resolucao_escaneada.md --forcar deu --dry)"
+      "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO/resolucao_escaneada.md --forcar deu --dry)",
+      "Bash(curl -s -m 3 http://localhost:8765/api/estado)",
+      "Bash(timeout 8 ./iniciar-acervo.sh)",
+      "Bash(python3 acervo_app.py --port 8765)"
     ]
   }
 }

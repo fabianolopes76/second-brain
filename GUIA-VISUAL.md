@@ -154,6 +154,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | O navegador abriu mas a página não carrega | Espere 5 s e recarregue (F5). Confira se a janela preta do servidor está aberta. |
 | Mensagens `x-www-browser: not found` … ao iniciar (WSL2) | Versão antiga do inicializador — atualize para a v3.5.2+ (`git pull`). O servidor funcionava; só a abertura automática falhava. |
 | Fechei a janela preta sem querer | O painel cai. Duplo-clique de novo no `Iniciar-Acervo.bat`. |
+| `Address already in use` ao iniciar | O painel **já estava aberto** — na v3.8.1+ o inicializador percebe e só abre o navegador. Para reiniciar de verdade (ex.: após atualizar), feche a janela anterior do servidor e inicie de novo. |
 | "Já há uma tarefa em execução" | O painel roda um trabalho por vez. Acompanhe a seção 04 e aguarde o `--- fim ---`. |
 | Etapa cinza (bloqueada) | O texto ao lado diz o que falta (ex.: "faça a triagem"). O trilho é em ordem. |
 | Apareceu `AVISO (inofensivo)` no log | Ignorar — está explicado no próprio log. O arquivo saiu correto. |

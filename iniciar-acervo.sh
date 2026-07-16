@@ -35,6 +35,22 @@ abrir_navegador() {
     echo "  (não achei navegador para abrir sozinho — abra manualmente: $URL)"
 }
 
+# Painel JA no ar? (janela anterior aberta, ou inicializador rodado 2x)
+# Nao derruba nem morre com "Address already in use": so abre o navegador.
+if python3 -c "
+import urllib.request, sys
+try:
+    sys.exit(0 if urllib.request.urlopen('$URL/api/estado', timeout=2).status == 200 else 1)
+except Exception:
+    sys.exit(1)" 2>/dev/null; then
+    echo "O painel JA esta no ar — abrindo o navegador em $URL"
+    echo "(para reiniciar, ex. apos atualizar: feche a janela anterior ou rode"
+    echo "   pkill -f acervo_app.py"
+    echo " e execute este inicializador de novo)"
+    abrir_navegador
+    exit 0
+fi
+
 ( sleep 2; abrir_navegador ) &
 
 exec python3 acervo_app.py
