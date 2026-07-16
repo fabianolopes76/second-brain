@@ -93,7 +93,10 @@ detectar_lang() {
     local f="$1" lg=""
     if [[ "$OCR_LANG" != auto ]]; then echo "$OCR_LANG"; return; fi
     if [[ -f "$DETECTOR" ]]; then
-        lg=$(python3 "$DETECTOR" "$f" --csv 2>/dev/null | awk -F, 'NR==2{print $2}')
+        # --codigo imprime SO o codigo (por/eng/...) — nunca parsear o CSV
+        # aqui: virgula no NOME do arquivo vira coluna e o "idioma" sai lixo
+        # (ex.: " 1lib.sk" -> ocrmypdf rc=3 fingindo dependencia ausente).
+        lg=$(python3 "$DETECTOR" "$f" --codigo 2>/dev/null | head -n1 | tr -d '[:space:]')
     fi
     [[ -z "$lg" ]] && lg="$OCR_LANG_FALLBACK"   # escaneado: sem texto p/ detectar
     echo "$lg"
@@ -143,7 +146,7 @@ rc_motivo() {
         0)  echo "ok" ;;
         1)  echo "erro de argumentos/uso" ;;
         2)  echo "arquivo de entrada invalido" ;;
-        3)  echo "dependencia ausente (tesseract/ghostscript?)" ;;
+        3)  echo "dependencia ausente (tesseract/ghostscript ou pacote de idioma?)" ;;
         4)  echo "saida invalida" ;;
         5)  echo "sem permissao de leitura/escrita" ;;
         6)  echo "PDF de entrada corrompido" ;;

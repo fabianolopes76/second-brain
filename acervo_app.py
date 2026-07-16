@@ -468,11 +468,9 @@ def _detectar_idioma_de(src: Path) -> str:
     if not det.exists():
         return ""
     try:
-        r = subprocess.run(["python3", str(det), str(src), "--csv"],
+        r = subprocess.run(["python3", str(det), str(src), "--codigo"],
                            capture_output=True, text=True, timeout=90)
-        linhas = r.stdout.strip().splitlines()
-        if len(linhas) > 1:
-            return linhas[1].split(",")[1]
+        return r.stdout.strip().splitlines()[0].strip() if r.stdout.strip() else ""
     except Exception:
         pass
     return ""

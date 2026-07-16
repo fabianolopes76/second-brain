@@ -205,6 +205,10 @@ def main():
     ap.add_argument("alvo", help="arquivo .pdf/.txt ou pasta")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--csv", action="store_true")
+    ap.add_argument("--codigo", action="store_true",
+                    help="imprime só o código do idioma (linha vazia se não "
+                         "detectado) — interface segura para shell: o CSV "
+                         "quebra quando o nome do arquivo contém vírgula")
     a = ap.parse_args()
 
     alvo = Path(a.alvo)
@@ -214,6 +218,10 @@ def main():
     arquivos = sorted(alvo.rglob("*.pdf")) if alvo.is_dir() else [alvo]
     res = [analisar(f) for f in arquivos]
 
+    if a.codigo:
+        for r in res:
+            print(r["idioma"] or "")
+        return
     if a.json:
         print(json.dumps(res, ensure_ascii=False, indent=2))
         return

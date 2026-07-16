@@ -153,6 +153,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | Etapa cinza (bloqueada) | O texto ao lado diz o que falta (ex.: "faça a triagem"). O trilho é em ordem. |
 | Apareceu `AVISO (inofensivo)` no log | Ignorar — está explicado no próprio log. O arquivo saiu correto. |
 | `FALHOU (rc=8: PDF criptografado)` | O PDF tem senha — remova a proteção (imprimir → salvar como PDF resolve) e rode de novo. |
+| `FALHOU (rc=3: dependência ausente…)` | Atualize para a **v3.6.1+** (`git pull`): em versões antigas, **vírgula no nome do PDF** derrubava a detecção de idioma e o OCR falhava fingindo dependência ausente. Se persistir após atualizar, falta mesmo uma ferramenta — abra **⚙ Ambiente** e envie o comando ao suporte. |
 | Nota não aparece no MOC do Obsidian | Etapa **(9) Auditar vault** → abra `RELATORIO-VAULT.md` no próprio vault: ele lista a causa e a correção. |
 | O painel pergunta "já concluída — continuar?" | Você clicou numa etapa verde. Se foi de propósito (reprocessar), confirme; senão, cancele. |
 

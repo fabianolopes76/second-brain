@@ -5,6 +5,24 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.6.1] — 2026-07-16 · OCR: vírgula no nome do arquivo derrubava a detecção de idioma
+
+### Corrigido
+- **PDF com vírgula no nome falhava no OCR com `rc=3: dependencia ausente`**
+  (ex.: `...(z-library.sk, 1lib.sk, z-lib.sk).pdf`). Causa: os consumidores
+  do `detectar_idioma.py` liam o **CSV** e fatiavam a linha por vírgula —
+  a vírgula do NOME virava coluna e o "idioma" saía lixo (` 1lib.sk`), que
+  o ocrmypdf rejeitava como pacote de idioma inexistente. O parse frágil
+  existia em **3 lugares** (`aplicar_ocr.sh`, `acervo_app.py`,
+  `corrigir_idioma.py`).
+- Mensagem do `rc=3` agora menciona a hipótese "pacote de idioma".
+
+### Adicionado
+- `detectar_idioma.py --codigo` — imprime **só** o código do idioma
+  (linha vazia se não detectado): interface à prova de vírgulas que os
+  3 consumidores passam a usar. Se o detector falhar, o fallback
+  `por+eng` continua valendo.
+
 ## [3.6.0] — 2026-07-16 · Layout do painel: Ambiente em slideover
 
 ### Alterado

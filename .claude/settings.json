@@ -66,7 +66,16 @@
       "Bash(awk -F: '{s+=$2} END {print \"com anotação de tipo em parâmetro:\", s}')",
       "Bash(bash -c ' *)",
       "Bash(timeout 6 ./iniciar-acervo.sh)",
-      "Bash(curl -s -o /dev/null -w \"painel responde: HTTP %{http_code}\\\\n\" http://localhost:8765)"
+      "Bash(curl -s -o /dev/null -w \"painel responde: HTTP %{http_code}\\\\n\" http://localhost:8765)",
+      "Bash(tesseract --list-langs)",
+      "Bash(command -v tesseract gs ocrmypdf)",
+      "Bash(ocrmypdf --version)",
+      "Bash(ls /mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/*.pdf 2>/dev/null | head; echo \"---\"; ls /mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/ 2>/dev/null | head -20)",
+      "Read(//mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/**)",
+      "Bash(python3 detectar_idioma.py '/mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/Código de Processo Civil Comentado Artigo por Artigo \\(Leonardo Carneiro da Cunha\\) \\(z-library.sk, 1lib.sk, z-lib.sk\\).pdf' --csv)",
+      "Bash(awk -F, 'NR==2{print $2}')",
+      "Bash(python3 -m py_compile detectar_idioma.py corrigir_idioma.py acervo_app.py)",
+      "Bash(DRYRUN=1 MODE=manter ROOT=\"/mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00\" bash aplicar_ocr.sh)"
     ]
   }
 }

@@ -40,12 +40,10 @@ def detectar(pdf: Path) -> str:
     if not det.exists():
         return ""
     try:
-        r = subprocess.run([sys.executable, str(det), str(pdf), "--csv"],
+        r = subprocess.run([sys.executable, str(det), str(pdf), "--codigo"],
                            capture_output=True, text=True, timeout=180)
-        linhas = r.stdout.strip().splitlines()
-        if len(linhas) > 1:
-            partes = linhas[1].split(",")
-            return partes[1] if len(partes) > 1 else ""
+        if r.stdout.strip():
+            return r.stdout.strip().splitlines()[0].strip()
     except Exception:
         pass
     return ""
