@@ -381,11 +381,15 @@ analisar_pdf() {
     (( PG_EMPTY < MIN_EMPTY_PAGES ))
 }
 
-# Coleta a lista de PDFs (ignorando saidas _OCR).
+# Coleta a lista de PDFs. Copia _OCR com o ORIGINAL ao lado e SAIDA do
+# pipeline (ignorada). Copia _OCR ORFA (usuario apagou o original e
+# promoveu a copia a arquivo principal) e FONTE normal — sem isso, apagar
+# os originais fazia esses PDFs sumirem da triagem e nada mais convertia.
 files=()
 while IFS= read -r -d '' f; do
     case "$(basename "$f")" in
-        *"${SUFFIX}".pdf|*"${SUFFIX}".PDF) continue ;;
+        *"${SUFFIX}".pdf) [[ -f "${f%"${SUFFIX}".pdf}.pdf" ]] && continue ;;
+        *"${SUFFIX}".PDF) [[ -f "${f%"${SUFFIX}".PDF}.PDF" ]] && continue ;;
     esac
     files+=("$f")
 done < <(find "$ROOT" -type f -iname '*.pdf' -print0)

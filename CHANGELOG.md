@@ -5,6 +5,18 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.11.1] — 2026-07-16 · Cópia `_OCR` órfã volta a ser fonte (reprocessamento do zero)
+
+### Corrigido
+- **Apagar os processamentos (controle.csv e pastas geradas) deixando só
+  os PDFs pesquisáveis fazia a conversão "não reprocessar"**: quem ficou
+  na pasta eram as cópias `_OCR.pdf`, e a triagem ignorava TODO `*_OCR.pdf`
+  por tratá-lo como saída do pipeline — sem original ao lado, o arquivo
+  ficava invisível (fora do controle.csv, fora da conversão, fora do
+  contador de PDFs do painel). Agora a cópia `_OCR` **órfã** (original
+  apagado — o usuário a promoveu a arquivo principal) é coletada como
+  fonte normal; com o original ao lado, segue ignorada como antes.
+
 ## [3.11.0] — 2026-07-16 · Fichas: correção manual do YAML pelo painel
 
 O Validar apontava a pendência (`tipo_fonte` ausente, autoria/ementa/ano

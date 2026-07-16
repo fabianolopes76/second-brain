@@ -178,6 +178,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | Corrigir idioma diz "não deu para detectar" | Atualize para a **v3.8.0+** (detecta pela cópia `_OCR` e pelo texto do próprio markdown). Se ainda assim não der, o caso é manual: peça ao suporte para rodar `corrigir_idioma.py arquivo.md --forcar por`. |
 | Publicar: `tipo '(vazio)' sem pasta de publicação` | A nota não tem o campo `tipo` — sem ele não há rota nem painel no MOC. Rode **Normalizar** (etapa 5): ele deriva o `tipo` do tipo_fonte quando não há ambiguidade. O que sobrar (índice REPROVADO, ficha vazia) é o **refino da Fase 3c** — preencha a ficha do índice no Projeto Claude e publique de novo. |
 | Publicar: `N fatia(s) retidas com o índice` | Proposital: fatia sem índice nasceria órfã no vault. Resolva o índice da obra (a razão está na mesma linha) e as fatias entram junto na próxima publicação. |
+| Apaguei o `controle.csv` e as pastas geradas para reprocessar do zero, e a conversão não roda | Rode **(1) Analisar** de novo (o trilho recomeça do disco). Se você também apagou os PDFs **originais** e deixou só as cópias `_OCR.pdf`, atualize para a **v3.11.1+**: antes a triagem ignorava a cópia órfã e ela sumia do pipeline. |
 
 ---
 

@@ -426,8 +426,14 @@ def contar_pdfs():
         return 0
     n = 0
     for p in Path(CFG["root"]).rglob("*"):
-        if p.suffix.lower() == ".pdf" and not p.stem.endswith("_OCR"):
-            n += 1
+        if p.suffix.lower() != ".pdf":
+            continue
+        if p.stem.endswith("_OCR"):
+            # copia _OCR só é "saída" se o original ainda existe ao lado;
+            # órfã (original apagado) conta como fonte, igual à triagem
+            if p.with_name(p.stem[:-4] + p.suffix).exists():
+                continue
+        n += 1
     return n
 
 
