@@ -27,7 +27,11 @@ fi
 
 echo ">> sem pacote apt nesta versao do Ubuntu — compilando da fonte oficial"
 echo ">> 1/4 dependencias de compilacao (sudo)"
-sudo apt-get update
+# update NAO-fatal: um repositorio de TERCEIROS quebrado (PPA com rotulo
+# mudado, mirror fora do ar) nao pode abortar a instalacao — os pacotes
+# de que precisamos vem dos repositorios oficiais do Ubuntu, que seguem
+# atualizados mesmo quando o update sai com erro por causa de outro repo.
+sudo apt-get update || echo "   (AVISO: um repositorio de terceiros falhou no update — seguindo assim mesmo)"
 sudo apt-get install -y build-essential automake libtool libleptonica-dev zlib1g-dev git
 
 echo ">> 2/4 baixando github.com/agl/jbig2enc"

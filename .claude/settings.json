@@ -110,7 +110,8 @@
       "Bash(apt-cache policy *)",
       "Bash(sudo -n true)",
       "Bash(command -v git make gcc automake libtool)",
-      "Bash(dpkg -l libleptonica-dev)"
+      "Bash(dpkg -l libleptonica-dev)",
+      "Bash(bash -n instalar-jbig2enc.sh)"
     ]
   }
 }
