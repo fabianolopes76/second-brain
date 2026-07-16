@@ -48,8 +48,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import comum
+import frontmatter
 import taxonomia
 import triagem
+from auditar_acervo import auditar as _auditar_arquivo, nota as _nota_auditoria
 
 # ---------------------------------------------------------------------------
 # Estado global de execução (um job por vez — simples e previsível)
@@ -736,6 +738,117 @@ def acao_auditar_vault(pasta=""):
 
 
 # ---------------------------------------------------------------------------
+# Fichas — correção MANUAL do YAML pelo painel (quando a automação não
+# resolve: tipo_fonte que a triagem não inferiu, autoria/ementa/ano vazios).
+# O mestre é o 2-MARKDOWN-BRUTO: fatias herdam a ficha ao refatiar (etapa 5).
+# ---------------------------------------------------------------------------
+_CAMPOS_LISTA = ("area", "autoria", "tags")   # no formulário: separar com ";"
+
+
+def _vocab():
+    """Vocabulário para o formulário — tudo da fonte única (taxonomia)."""
+    return {
+        "tipos_fonte": sorted(taxonomia.TIPOS_FONTE),
+        "obrigatorios": {tf: list(taxonomia.campos_obrigatorios(tf))
+                         for tf in taxonomia.TIPOS_FONTE},
+        "tipo_unico": {tf: taxonomia.tipo_unico_de(tf)
+                       for tf in taxonomia.TIPOS_FONTE},
+        "tipos": list(taxonomia.TIPOS),
+        "areas": sorted(set(taxonomia.AREAS.values())),
+        "status": list(taxonomia.STATUS),
+        "confiabilidade": list(taxonomia.CONFIABILIDADE),
+        "listas": list(_CAMPOS_LISTA),
+    }
+
+
+def _ficha_path(nome: str):
+    """Caminho seguro dentro de 2-MARKDOWN-BRUTO (sem traversal)."""
+    base = (Path(CFG["root"]) / "2-MARKDOWN-BRUTO").resolve()
+    p = (base / Path(nome).name).resolve()
+    if p.parent != base or not p.name.endswith(".md"):
+        return None
+    return p
+
+
+def listar_fichas():
+    """Cada .md do bruto com os campos-chave e a nota da auditoria."""
+    if not CFG["root"]:
+        return []
+    base = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
+    if not base.is_dir():
+        return []
+    out = []
+    for f in sorted(base.glob("*.md")):
+        if f.name.startswith(("RELATORIO", "_")):
+            continue
+        try:
+            fm = frontmatter.ler(
+                f.read_text(encoding="utf-8", errors="replace")).campos
+            r = _auditar_arquivo(f)
+        except Exception:
+            continue
+        aut = fm.get("autoria")
+        out.append({
+            "arquivo": f.name,
+            "tipo_fonte": str(fm.get("tipo_fonte") or ""),
+            "tipo": str(fm.get("tipo") or ""),
+            "ano": str(fm.get("ano") or ""),
+            "autoria": "; ".join(aut) if isinstance(aut, list) else str(aut or ""),
+            "nota": _nota_auditoria(r),
+            "erros": r.get("erros", [])[:3],
+        })
+    return out
+
+
+def _atualizar_frontmatter(texto: str, novos: dict) -> str:
+    """Atualiza campos do frontmatter linha a linha, preservando o resto
+    (comentários e campos não tocados). Substituir um campo remove também
+    a continuação do bloco (linhas indentadas / itens de lista)."""
+    m = re.match(r"^---[ \t]*\n(.*?)\n---[ \t]*\n?", texto, re.DOTALL)
+    if m:
+        linhas = m.group(1).split("\n")
+        resto = texto[m.end():]
+    else:
+        linhas, resto = [], texto
+    for campo, valor in novos.items():
+        linha = frontmatter.emitir(campo, valor)
+        i = next((k for k, l in enumerate(linhas)
+                  if re.match(rf"^{re.escape(campo)}\s*:", l)), None)
+        if i is None:
+            linhas.append(linha)
+            continue
+        j = i + 1
+        while j < len(linhas) and (linhas[j].startswith((" ", "\t", "- "))):
+            j += 1
+        linhas[i:j] = [linha]
+    return "---\n" + "\n".join(linhas) + "\n---\n" + resto
+
+
+def salvar_ficha(nome: str, campos: dict):
+    """Aplica os campos preenchidos no formulário. Vazio = não mexe."""
+    p = _ficha_path(nome)
+    if p is None or not p.exists():
+        return {"ok": False, "msg": f"arquivo não encontrado: {nome}"}
+    novos = {}
+    for k, v in campos.items():
+        k = str(k).strip()
+        v = str(v).strip()
+        if not k or not v or not re.fullmatch(r"[a-z_][a-z0-9_]*", k):
+            continue
+        if k in _CAMPOS_LISTA:
+            novos[k] = [x.strip() for x in v.split(";") if x.strip()]
+        else:
+            novos[k] = v
+    if not novos:
+        return {"ok": False, "msg": "nenhum campo preenchido."}
+    texto = p.read_text(encoding="utf-8", errors="replace")
+    p.write_text(_atualizar_frontmatter(texto, novos), encoding="utf-8")
+    r = _auditar_arquivo(p)
+    return {"ok": True, "nota": _nota_auditoria(r),
+            "erros": r.get("erros", []), "gravados": sorted(novos)}
+
+
+# ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
@@ -762,6 +875,28 @@ class Handler(BaseHTTPRequestHandler):
                                               ensure_ascii=False))
         if u.path == "/api/atalhos":
             return self._send(200, json.dumps(atalhos(), ensure_ascii=False))
+        if u.path == "/api/vocab":
+            return self._send(200, json.dumps(_vocab(), ensure_ascii=False))
+        if u.path == "/api/fichas":
+            return self._send(200, json.dumps(listar_fichas(), ensure_ascii=False))
+        if u.path == "/api/ficha":
+            q = parse_qs(u.query)
+            p = _ficha_path(q.get("arq", [""])[0])
+            if p is None or not p.exists():
+                return self._send(200, json.dumps({}))
+            fm = frontmatter.ler(
+                p.read_text(encoding="utf-8", errors="replace")).campos
+            plano = {k: ("; ".join(str(x) for x in v) if isinstance(v, list)
+                         else str(v if v is not None else ""))
+                     for k, v in fm.items()}
+            # a referência ABNT ninguém deveria montar à mão: o validador
+            # já sabe sugerir a partir da ficha (validar_yaml_abnt --gerar)
+            try:
+                import validar_yaml_abnt
+                plano["_sugestao_referencia"] = validar_yaml_abnt.montar_referencia(fm)
+            except Exception:
+                plano["_sugestao_referencia"] = ""
+            return self._send(200, json.dumps(plano, ensure_ascii=False))
         if u.path == "/api/estado":
             return self._send(200, json.dumps({
                 "cfg": CFG,
@@ -833,6 +968,10 @@ class Handler(BaseHTTPRequestHandler):
 
             return self._send(200, json.dumps(
                 {"ok": not avisos, "avisos": avisos, "cfg": CFG}, ensure_ascii=False))
+
+        if u.path == "/api/ficha":
+            r = salvar_ficha(data.get("arquivo", ""), data.get("campos") or {})
+            return self._send(200, json.dumps(r, ensure_ascii=False))
 
         if u.path == "/api/acao":
             a = data.get("acao")
@@ -1424,6 +1563,35 @@ tr:hover td{background:var(--surf2)}
   <div class="stat" id="stat"></div>
 </section>
 
+<!-- 05 FICHAS -->
+<section>
+  <div class="head"><span class="n">05</span><h2>Fichas</h2>
+    <p>correção <b>manual</b> do YAML quando a automação não resolve — salve e a validação reavalia na hora</p></div>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <button class="bnav" onclick="carregarFichas()">🔄 Carregar fichas</button>
+    <span class="dica" id="fichasInfo"></span>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Arquivo</th><th>tipo_fonte</th><th>tipo</th><th>Ano</th><th>Autoria</th><th>Validação</th><th></th></tr></thead>
+    <tbody id="fichasTb"><tr><td colspan="7" style="color:var(--muted);padding:14px">Clique em "🔄 Carregar fichas" (lê o 2-MARKDOWN-BRUTO).</td></tr></tbody>
+  </table></div>
+  <div class="dica">O mestre é o <b>2-MARKDOWN-BRUTO</b>: corrija aqui e <b>refatie</b> (etapa 5) — as fatias herdam a ficha do índice. No formulário, campo deixado <b>em branco não mexe</b> no arquivo.</div>
+</section>
+
+<!-- SLIDEOVER · FICHA -->
+<div class="sov-bg" id="fsovBg" onclick="fecharFicha()"></div>
+<aside class="sover" id="fsov" aria-label="Editar ficha">
+  <div class="sov-head"><h2 id="fsovTit" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">✎ Ficha</h2>
+    <button class="fechar" onclick="fecharFicha()" title="fechar (Esc)">✕</button></div>
+  <div class="sov-body">
+    <p class="sov-dica" id="fsovErros"></p>
+    <div id="fichaForm"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" onclick="salvarFicha()" style="flex:1">💾 Salvar e revalidar</button>
+    </div>
+  </div>
+</aside>
+
 <!-- SLIDEOVER · AMBIENTE -->
 <div class="sov-bg" id="sovBg" onclick="fecharAmbiente()"></div>
 <aside class="sover" id="sov" aria-label="Ambiente — dependências">
@@ -1704,7 +1872,7 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); }
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); }
 });
 
 /* ---------- modal "o que faz esta etapa" ---------- */
@@ -1736,7 +1904,7 @@ const INFO = {
  e6:{t:'6 · Validar — as travas de qualidade',
   o:'Duas verificações que evitam retrabalho lá na frente: <b>âncoras íntegras</b> (nenhuma página se perdeu na conversão/limpeza) e <b>YAML coerente com o tipo</b> (livro exige página e editora; lei não). Metadado errado não dá erro no Obsidian — a nota some dos painéis em silêncio. Validar aqui é o que impede esse silêncio.',
   a:[['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
-  s:'Relatório no log da seção 02 (não grava arquivo).'},
+  s:'Relatório no log da seção 02 (não grava arquivo). O que a automação não resolver, corrija na seção <b>05 · Fichas</b>: formulário com os campos que o tipo exige e sugestão de referência ABNT com um clique.'},
  e7:{t:'7 · Auditar — a nota final de cada arquivo',
   o:'Responde à pergunta "isto <b>serve</b> ao segundo cérebro?": cruza ficha, âncoras e conteúdo e dá a cada arquivo uma nota — <b>PRONTO</b>, <b>PARCIAL</b> (avisos) ou <b>REPROVADO</b> (corrigir antes de publicar; a etapa 8 recusa reprovados).',
   a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
@@ -1772,6 +1940,98 @@ function abrirInfo(id){
 }
 function fecharInfo(){ infoBg.classList.remove('on'); }
 infoBg.addEventListener('click', e => { if(e.target === infoBg) fecharInfo(); });
+
+/* ---------- fichas: correção manual do YAML ---------- */
+let VOCAB = null, FICHA_ARQ = '', F_CAMPOS = {};
+const F_SEL = {tipo_fonte:'tipos_fonte', tipo:'tipos', area:'areas',
+               status:'status', confiabilidade:'confiabilidade'};
+async function carregarFichas(){
+  fichasInfo.textContent = 'carregando…';
+  if(!VOCAB) VOCAB = await (await fetch('/api/vocab')).json();
+  const fs = await (await fetch('/api/fichas')).json();
+  const pill = n => n==='PRONTO' ? 'ok' : (n==='REPROVADO' ? 'no' : 'sim');
+  fichasTb.innerHTML = fs.length ? fs.map(f=>`<tr>
+      <td title="${esc(f.erros.join(' | '))}">${esc(f.arquivo)}</td>
+      <td>${f.tipo_fonte?esc(f.tipo_fonte):'<span style="color:var(--err)">✗ falta</span>'}</td>
+      <td>${esc(f.tipo)}</td><td>${esc(f.ano)}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.autoria)}</td>
+      <td><span class="pill ${pill(f.nota)}">${esc(f.nota)}</span></td>
+      <td><button class="bnav" onclick="abrirFicha(${q(f.arquivo)})">✎ Editar</button></td>
+    </tr>`).join('')
+    : `<tr><td colspan="7" style="color:var(--muted);padding:14px">Nenhum markdown em 2-MARKDOWN-BRUTO — converta antes (etapa 3).</td></tr>`;
+  const nOk = fs.filter(f=>f.nota==='PRONTO').length;
+  fichasInfo.textContent = fs.length
+    ? `${fs.length} nota(s) · ${nOk} PRONTO · ${fs.length-nOk} com pendência (passe o mouse no nome para ver)`
+    : '';
+}
+async function abrirFicha(arq){
+  if(!VOCAB) VOCAB = await (await fetch('/api/vocab')).json();
+  F_CAMPOS = await (await fetch('/api/ficha?arq='+encodeURIComponent(arq))).json();
+  FICHA_ARQ = arq;
+  fsovTit.textContent = '✎ ' + arq;
+  fsovErros.textContent = '';
+  renderFicha();
+  fsovBg.classList.add('on'); fsov.classList.add('on');
+}
+function campoFicha(c){
+  const v = F_CAMPOS[c] || '';
+  if(F_SEL[c]){
+    const ops = VOCAB[F_SEL[c]];
+    return `<div class="campo"><label>${esc(c)}</label><select id="f_${esc(c)}">
+      <option value="">${v ? '(manter: '+esc(v)+')' : '(vazio)'}</option>
+      ${ops.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select></div>`;
+  }
+  const extra = VOCAB.listas.includes(c) ? ' · vários? separe com ;' : '';
+  return `<div class="campo"><label>${esc(c)}${extra}</label>
+    <input type="text" id="f_${esc(c)}" value="${esc(v)}" placeholder="(em branco = não mexe)"></div>`;
+}
+function campoReferencia(){
+  const v = F_CAMPOS.referencia_abnt || '';
+  const sug = F_CAMPOS._sugestao_referencia || '';
+  return `<div class="campo"><label>referencia_abnt</label>
+    <input type="text" id="f_referencia_abnt" value="${esc(v)}" placeholder="(em branco = não mexe)">
+    ${(sug && !v) ? `<div class="dica">sugestão do validador, montada da ficha atual:<br><i>${esc(sug)}</i><br>
+      <button class="bnav" onclick="f_referencia_abnt.value=${q(sug)}" style="margin-top:4px">↳ usar a sugestão</button></div>` : ''}
+  </div>`;
+}
+function renderFicha(){
+  const tf = F_CAMPOS.tipo_fonte || '';
+  const obrig = (VOCAB.obrigatorios[tf] || []);
+  const fixos = ['tipo_fonte','tipo','area','status','confiabilidade'];
+  const campos = [...fixos, ...obrig.filter(c=>!fixos.includes(c)), 'referencia_abnt'];
+  fichaForm.innerHTML =
+    (tf ? `<p class="sov-dica">obrigatórios de <b>${esc(tf)}</b>: ${obrig.map(esc).join(', ') || '—'}</p>`
+        : `<p class="sov-dica">comece pelo <b>tipo_fonte</b> — o formulário abre os campos que ele exige</p>`)
+    + campos.map(c => c==='referencia_abnt' ? campoReferencia() : campoFicha(c)).join('');
+  document.getElementById('f_tipo_fonte').onchange = (e)=>{
+    // preserva o que já foi digitado antes de redesenhar o formulário
+    document.querySelectorAll('#fichaForm [id^="f_"]').forEach(el=>{
+      if(el.value) F_CAMPOS[el.id.slice(2)] = el.value;
+    });
+    F_CAMPOS.tipo_fonte = e.target.value || F_CAMPOS.tipo_fonte;
+    const sug = VOCAB.tipo_unico[F_CAMPOS.tipo_fonte];
+    if(sug && !F_CAMPOS.tipo) F_CAMPOS.tipo = sug;
+    renderFicha();
+  };
+}
+async function salvarFicha(){
+  const campos = {};
+  document.querySelectorAll('#fichaForm [id^="f_"]').forEach(el=>{
+    if(el.value && el.value.trim()) campos[el.id.slice(2)] = el.value.trim();
+  });
+  const r = await (await fetch('/api/ficha',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({arquivo:FICHA_ARQ, campos})})).json();
+  if(!r.ok){ fsovErros.innerHTML = '<b style="color:var(--err)">✗</b> ' + esc(r.msg||'erro'); return; }
+  fsovErros.innerHTML = r.nota==='PRONTO'
+    ? '<b style="color:var(--ok)">✓ PRONTO</b> — ficha completa para o segundo cérebro'
+    : `<b style="color:var(--warn)">${esc(r.nota)}</b>` +
+      (r.erros.length ? ' — falta: ' + esc(r.erros.slice(0,3).join(' | ')) : '');
+  F_CAMPOS = await (await fetch('/api/ficha?arq='+encodeURIComponent(FICHA_ARQ))).json();
+  renderFicha();
+  carregarFichas();
+}
+function fecharFicha(){ fsovBg.classList.remove('on'); fsov.classList.remove('on'); }
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',

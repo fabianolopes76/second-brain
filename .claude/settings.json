@@ -111,7 +111,12 @@
       "Bash(sudo -n true)",
       "Bash(command -v git make gcc automake libtool)",
       "Bash(dpkg -l libleptonica-dev)",
-      "Bash(bash -n instalar-jbig2enc.sh)"
+      "Bash(bash -n instalar-jbig2enc.sh)",
+      "Bash(python3 -c \"import taxonomia; print\\(list\\(taxonomia.AREAS.items\\(\\)\\)[:3]\\)\")",
+      "Bash(curl -s -X POST http://localhost:8887/api/ficha -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:8887/api/ficha -H 'Content-Type: application/json' -d '{\"arquivo\":\"../../../etc/passwd\",\"campos\":{\"tipo\":\"X\"}}')",
+      "Bash(pkill -f \"acervo_app.py --port 8887\")"
     ]
   }
 }

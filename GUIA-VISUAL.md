@@ -31,6 +31,7 @@ O painel tem 5 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 │  02 · Execução       ← o "vidro da máquina": log ao vivo     │
 │  03 · Pipeline       ← O TRILHO: etapas 1 a 10, em ordem     │
 │  04 · Triagem        ← a tabela com o raio-X de cada PDF     │
+│  05 · Fichas         ← corrija o YAML à mão, sem editor      │
 └──────────────────────────────────────────────────────────────┘
    (⚙ Ambiente abre um painel lateral com o semáforo das
     ferramentas — verde: tudo pronto; vermelho: precisa de ação)
@@ -116,6 +117,16 @@ Depois da etapa 1, esta tabela mostra, para cada arquivo: idioma detectado, se p
 - `A-conferir (palpite: alta)` — o sistema tem boa confiança (nome **e** conteúdo apontam o mesmo tipo).
 - `A-conferir (palpite: media)` — confiança média: vale conferir.
 - `A-conferir (indeterminado)` — o sistema **não chutou** (é assim que se evita que uma lei vire "livro" por engano). Classifique você.
+
+### 05 · Fichas — correção manual, sem editor de texto
+
+Quando a etapa **(6) Validar** apontar pendência que a automação não resolve (`tipo_fonte` que a triagem não inferiu, autoria/ementa/ano vazios), é aqui que você conserta — **sem abrir arquivo nenhum**:
+
+1. Clique **🔄 Carregar fichas**: cada markdown do `2-MARKDOWN-BRUTO` aparece com sua nota de validação (PRONTO / PARCIAL / REPROVADO — passe o mouse no nome para ver o que falta).
+2. Clique **✎ Editar**: um painel lateral abre com o formulário. Comece pelo **tipo_fonte** — o formulário abre exatamente os campos que aquele tipo exige (livro pede editora; lei pede ementa e nº da norma).
+3. **💾 Salvar e revalidar**: a validação roda na hora e mostra o que ainda falta. A **referência ABNT** ninguém digita à mão: o painel mostra a sugestão montada da sua ficha — um clique em *↳ usar a sugestão* e pronto.
+
+> Campo deixado **em branco não mexe** no arquivo. O mestre é o `2-MARKDOWN-BRUTO`: depois de corrigir, **refatie** (etapa 5) para as fatias herdarem a ficha.
 
 ---
 

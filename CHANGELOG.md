@@ -5,6 +5,28 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.11.0] — 2026-07-16 · Fichas: correção manual do YAML pelo painel
+
+O Validar apontava a pendência (`tipo_fonte` ausente, autoria/ementa/ano
+vazios), mas corrigir exigia editar YAML num editor de texto — sem
+caminho visual. Agora há.
+
+### Adicionado
+- **Seção 05 · Fichas no painel**: lista cada markdown do
+  `2-MARKDOWN-BRUTO` com a nota da validação (PRONTO/PARCIAL/REPROVADO e
+  o que falta). **✎ Editar** abre um formulário lateral que conhece a
+  taxonomia: escolhido o `tipo_fonte`, aparecem exatamente os campos que
+  ele exige; `tipo` é sugerido quando inequívoco; vocabulários
+  (área/status/confiabilidade) viram seletores. **Salvar revalida na
+  hora** e mostra o que ainda falta.
+- **Sugestão de referência ABNT com um clique**: o formulário mostra a
+  referência montada da ficha atual (mesma lógica do
+  `validar_yaml_abnt --gerar`) — *↳ usar a sugestão* preenche o campo.
+- API: `GET /api/vocab`, `GET /api/fichas`, `GET/POST /api/ficha`
+  (atualização linha a linha do frontmatter: preserva comentários e
+  campos não tocados; campo em branco no formulário não mexe no arquivo;
+  proteção contra path traversal).
+
 ## [3.10.3] — 2026-07-16 · Instalador do jbig2enc: faltava o pkg-config
 
 ### Corrigido
