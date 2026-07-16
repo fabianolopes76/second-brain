@@ -5,6 +5,34 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.8.0] — 2026-07-16 · Acompanhamento nos cards, ajuda por etapa e correções de conversão/idioma
+
+### Adicionado
+- **Progresso dentro do card da etapa em execução**: enquanto um trabalho
+  roda, o card correspondente mostra o arquivo atual (`3/6 — nome.pdf`),
+  barra de progresso, contagem ✓/✗ e — no OCR — há quanto tempo o arquivo
+  atual está sendo processado (via sinal de vida). O card do OCR concluído
+  passa a resumir o que aconteceu: `X já pesquisáveis · Y OCRizados`.
+- **Botão ⓘ em cada card do pipeline**: abre um modal que explica o que a
+  etapa faz, **o que cada botão executa** (script e efeito) e o que fica no
+  disco — inclusive o "Limpar", cuja função não estava clara.
+- **`corrigir_idioma.py --forcar IDIOMA`**: correção manual, arquivo a
+  arquivo, para quando nenhuma detecção resolve (recusa rodar em pasta,
+  para não sobrescrever detecções corretas em lote).
+
+### Corrigido
+- **"Converter pasta" ignorava quem não exige âncora**: legislação e
+  jurisprudência nunca eram convertidas pelo botão (só livros), e a
+  resposta "nenhum arquivo exige âncora" parecia defeito. Agora converte
+  **todos os PDFs pesquisáveis** do `controle.csv` e o log abre com o
+  plano: os aptos e os PULADOS por falta de OCR (com a instrução de
+  voltar à etapa 2).
+- **`corrigir_idioma.py` detectava no PDF errado**: `X.pdf` e `X_OCR.pdf`
+  casam na mesma chave e o primeiro encontrado vencia — se fosse o
+  original escaneado, a detecção falhava à toa ("rode OCR antes" com o
+  OCR já feito). Agora prefere o `_OCR` e, se ainda não der, detecta no
+  **texto do próprio markdown** já convertido.
+
 ## [3.7.0] — 2026-07-16 · OCR com sinal de vida (nada de "parece congelado")
 
 ### Adicionado

@@ -63,6 +63,10 @@ Fica logo abaixo da Configuração: quando você clica num botão do Pipeline, o
 
 O coração do painel. As etapas formam um trilho em 6 grupos, e **o painel lê o disco para saber onde você está**: cada etapa aparece em um de três estados:
 
+> **ⓘ em cada card** — todo card tem um botãozinho redondo ⓘ ao lado do título: ele abre uma janela explicando **o que a etapa faz, o que cada botão executa e o que fica gravado no disco**. Na dúvida sobre qualquer botão (ex.: "Limpar"), clique no ⓘ.
+>
+> **Progresso dentro do card** — enquanto uma etapa roda, o próprio card mostra o arquivo em processamento (`3/6 — nome.pdf`), a barra de progresso e a contagem de ✓/✗. No OCR aparece também há quanto tempo o arquivo atual está sendo processado — livro digitalizado grande demora, mas você **vê** que está andando.
+
 | Aparência | Estado | Significado |
 |---|---|---|
 | ⚪ cinza, apagada | **bloqueada** | falta um passo anterior (o texto diz qual) |
@@ -157,6 +161,8 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | `FALHOU (rc=3: dependência ausente…)` | Atualize para a **v3.6.1+** (`git pull`): em versões antigas, **vírgula no nome do PDF** derrubava a detecção de idioma e o OCR falhava fingindo dependência ausente. Se persistir após atualizar, falta mesmo uma ferramenta — abra **⚙ Ambiente** e envie o comando ao suporte. |
 | Nota não aparece no MOC do Obsidian | Etapa **(9) Auditar vault** → abra `RELATORIO-VAULT.md` no próprio vault: ele lista a causa e a correção. |
 | O painel pergunta "já concluída — continuar?" | Você clicou numa etapa verde. Se foi de propósito (reprocessar), confirme; senão, cancele. |
+| "Converter pasta" respondia "nenhum arquivo exige âncora" | Versão antiga (≤3.7): só convertia livros. Atualize para a **v3.8.0+** — converte todos os PDFs pesquisáveis e lista no log os pulados por falta de OCR. |
+| Corrigir idioma diz "não deu para detectar" | Atualize para a **v3.8.0+** (detecta pela cópia `_OCR` e pelo texto do próprio markdown). Se ainda assim não der, o caso é manual: peça ao suporte para rodar `corrigir_idioma.py arquivo.md --forcar por`. |
 
 ---
 

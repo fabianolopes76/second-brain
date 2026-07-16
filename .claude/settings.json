@@ -78,7 +78,19 @@
       "Bash(DRYRUN=1 MODE=manter ROOT=\"/mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00\" bash aplicar_ocr.sh)",
       "Bash(git rm *)",
       "Bash(BATIMENTO_S=3 MODE=manter ROOT=/tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2 bash aplicar_ocr.sh)",
-      "Bash(pdftotext -l 1 /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -)"
+      "Bash(pdftotext -l 1 /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -)",
+      "Bash(python3 acervo_app.py)",
+      "Bash(kill %1)",
+      "Bash(curl -s -X POST http://localhost:8883/api/config -H 'Content-Type: application/json' -d '{\"root\":\"/tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2\",\"scripts\":\"/home/fabiano/projects/second-brain\"}')",
+      "Bash(python3 -c \"import json,sys; j=json.load\\(sys.stdin\\); print\\('config ok, root =', j['cfg']['root']\\)\")",
+      "Bash(curl -s -X POST http://localhost:8883/api/acao -H 'Content-Type: application/json' -d '{\"acao\":\"triagem\"}')",
+      "Bash(curl -s http://localhost:8883/api/estado)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST http://localhost:8883/api/acao -H 'Content-Type: application/json' -d '{\"acao\":\"paginar\"}')",
+      "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO --pdfs /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2)",
+      "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO --forcar por)",
+      "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO/resolucao_escaneada.md --forcar xx)",
+      "Bash(python3 corrigir_idioma.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/2-MARKDOWN-BRUTO/resolucao_escaneada.md --forcar deu --dry)"
     ]
   }
 }

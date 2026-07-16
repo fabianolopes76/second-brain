@@ -58,6 +58,7 @@ class Job:
         self.lock = threading.Lock()
         self.running = False
         self.name = ""
+        self.action = ""      # qual etapa disparou (ocr/paginar/...) — ancora o progresso no card
         self.log = []
         self.rc = None
         self.started = None
@@ -107,6 +108,7 @@ class Job:
             return {
                 "running": self.running,
                 "name": self.name,
+                "action": self.action,
                 "rc": self.rc,
                 "log": "".join(self.log),
             }
@@ -423,24 +425,35 @@ def acao_triagem(dry=True, force=False, modo="manter"):
 
 
 def acao_paginar(offset=0, romanas=0):
-    """Roda injetar_paginas.py em todos os PDFs que exigem âncora, conforme o CSV."""
+    """Converte a pasta: TODOS os PDFs pesquisáveis do CSV → markdown com âncoras.
+
+    Antes só convertia quem exige âncora de página — legislação/jurisprudência
+    (que não exigem) ficavam de fora e o botão parecia quebrado. A âncora extra
+    não reprova ninguém; escaneado ainda sem OCR não é convertível e é listado
+    no log com a instrução de voltar à etapa 2.
+    """
     linhas = ler_csv()
-    alvos = [l for l in linhas if l.get("exige_ancora_pagina", "").upper() == "SIM"]
-    if not alvos:
-        return False, "Nenhum arquivo exige âncora de página (rode a triagem antes)."
+    if not linhas:
+        return False, "Rode a triagem antes (etapa 1) — ela gera o controle.csv."
 
     vpy = Path(CFG["venv"]) / "bin" / "python"
     script = Path(CFG["scripts"]) / "injetar_paginas.py"
     saida = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
     saida.mkdir(exist_ok=True)
 
-    cmds = []
-    for l in alvos:
+    cmds, nomes, sem_ocr = [], [], []
+    for l in linhas:
         # prefere o _OCR quando existe; senão, o original
         src = l.get("arquivo_ocr") or l.get("caminho")
         if not src or not Path(src).exists():
             src = l.get("caminho")
         if not src or not Path(src).exists():
+            continue
+        # pesquisável = já tinha texto, ou o OCR produziu a cópia _OCR
+        pesquisavel = (l.get("tem_camada_texto") == "sim"
+                       or Path(src).stem.endswith("_OCR"))
+        if not pesquisavel:
+            sem_ocr.append(Path(src).name)
             continue
         dst = saida / (Path(src).stem.replace("_OCR", "") + ".md")
         c = [str(vpy), str(script), src, "-o", str(dst)]
@@ -456,11 +469,21 @@ def acao_paginar(offset=0, romanas=0):
         if idi:
             c += ["--idioma", idi]
         cmds.append(" ".join(shlex.quote(x) for x in c))
+        nomes.append(Path(src).name)
 
     if not cmds:
+        if sem_ocr:
+            return False, (f"Nenhum PDF pesquisável ainda — {len(sem_ocr)} "
+                           "arquivo(s) precisam de OCR (etapa 2) antes de converter.")
         return False, "Nenhum arquivo encontrado no disco."
-    script_sh = " ; ".join(f'echo ">> {i+1}/{len(cmds)}" ; {c}' for i, c in enumerate(cmds))
-    return JOB.start(f"Injetar paginação ({len(cmds)} arquivo(s))", script_sh)
+
+    partes = [f'echo "=== {len(cmds)} PDF(s) pesquisáveis -> 2-MARKDOWN-BRUTO ==="']
+    partes += [f'echo {shlex.quote("    " + n)}' for n in nomes]
+    partes += [f'echo {shlex.quote("    PULADO (precisa de OCR — etapa 2): " + n)}'
+               for n in sem_ocr]
+    partes += ['echo ' + shlex.quote(f">> [{i+1}/{len(cmds)}] {nomes[i]}") + f' ; {c}'
+               for i, c in enumerate(cmds)]
+    return JOB.start(f"Converter pasta ({len(cmds)} arquivo(s))", " ; ".join(partes))
 
 
 def _detectar_idioma_de(src: Path) -> str:
@@ -822,6 +845,8 @@ class Handler(BaseHTTPRequestHandler):
                                      aplicar=bool(data.get("aplicar", False)))
             else:
                 ok, msg = False, "Ação desconhecida."
+            if ok:
+                JOB.action = a
             return self._send(200, json.dumps({"ok": ok, "msg": msg}))
 
         self._send(404, "{}")
@@ -925,6 +950,41 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .fase{font:600 10px var(--sans);letter-spacing:.1em;text-transform:uppercase;
   color:var(--brass);margin:14px 0 6px 56px}
 .fase:first-child{margin-top:0}
+
+/* ---- progresso da etapa em execução (dentro do card) ---- */
+.etprog{margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}
+.ptxt{font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:7px;
+  flex-wrap:wrap;min-width:0}
+.ptxt .parq{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.pbar{height:6px;background:var(--surf2);border:1px solid var(--line);
+  border-radius:4px;margin-top:6px;overflow:hidden}
+.pfill{height:100%;background:var(--burg);border-radius:4px;transition:width .4s}
+.spin{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--burg);
+  border-radius:50%;animation:gira .8s linear infinite;flex-shrink:0}
+@keyframes gira{to{transform:rotate(360deg)}}
+
+/* ---- botão ⓘ e modal "o que faz esta etapa" ---- */
+.iet{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);
+  background:var(--surf2);color:var(--muted);font:600 12px var(--serif);
+  cursor:pointer;flex-shrink:0;line-height:1;padding:0}
+.iet:hover{border-color:var(--brass);color:var(--brass)}
+.imod-bg{position:fixed;inset:0;background:rgba(27,42,65,.45);display:none;
+  z-index:70;align-items:center;justify-content:center;padding:20px}
+.imod-bg.on{display:flex}
+.imod{background:var(--surf);border-radius:14px;max-width:640px;width:100%;
+  max-height:85vh;overflow-y:auto;box-shadow:0 18px 60px rgba(0,0,0,.25);
+  padding:20px 22px}
+.imod h3{font:600 17px var(--serif);margin:0;flex:1}
+.imod .sub{font:600 10.5px var(--sans);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--brass);margin:16px 0 6px}
+.imod p{font-size:13px;margin:6px 0;color:var(--ink-2);line-height:1.55}
+.imod .bt{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;font-size:12.5px;
+  color:var(--ink-2);line-height:1.5}
+.imod .bt b{white-space:nowrap;color:var(--ink);border:1px solid var(--line);
+  border-radius:7px;padding:2px 9px;height:fit-content;background:var(--surf2);
+  font-size:12px}
+.imod code{background:var(--surf2);border:1px solid var(--line);border-radius:4px;
+  padding:0 4px;font:11.5px var(--mono)}
 
 /* ---- fila ---- */
 .fila{max-height:120px;overflow:auto;border:1px solid var(--line);border-radius:8px;
@@ -1138,7 +1198,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">1</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Triagem</h3>
+          <h3>Triagem</h3><button class="iet" onclick="abrirInfo('e1')" title="O que faz esta etapa?">i</button>
           <span class="desc">Detecta idioma e quem precisa de OCR. Gera <code>controle.csv</code>. Não grava nada.</span>
           <span class="st" id="s1">—</span>
           <div class="acoes"><button data-a class="primary" onclick="acao('triagem')">Analisar</button></div>
@@ -1150,7 +1210,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">2</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>OCR</h3>
+          <h3>OCR</h3><button class="iet" onclick="abrirInfo('e2')" title="O que faz esta etapa?">i</button>
           <span class="desc">Torna os escaneados pesquisáveis. Preserva o original (<code>_OCR.pdf</code>).</span>
           <span class="st" id="s2">—</span>
           <div class="acoes"><button data-a onclick="acao('ocr',{modo:'manter'})">Aplicar OCR</button></div>
@@ -1165,8 +1225,8 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">3</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Paginação</h3>
-          <span class="desc">PDF → Markdown com âncoras <code>{{p.NN}}</code>. Só nos tipos que exigem página.</span>
+          <h3>Paginação</h3><button class="iet" onclick="abrirInfo('e3')" title="O que faz esta etapa?">i</button>
+          <span class="desc">PDF → Markdown com âncoras <code>{{p.NN}}</code>. Converte todos os PDFs pesquisáveis; escaneado sem OCR fica listado como pulado.</span>
           <span class="st" id="s3">—</span>
           <div class="acoes">
             <button data-a class="primary" onclick="acao('paginar',{offset:+offset.value,romanas:+romanas.value})">Converter pasta</button>
@@ -1197,7 +1257,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">4</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Limpar OCR</h3>
+          <h3>Limpar OCR</h3><button class="iet" onclick="abrirInfo('e4')" title="O que faz esta etapa?">i</button>
           <span class="desc">Hifenização, cabeçalhos repetidos, ruído. Âncoras preservadas.</span>
           <span class="st" id="s4">—</span>
           <div class="acoes">
@@ -1212,7 +1272,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">5</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Fatiar</h3>
+          <h3>Fatiar</h3><button class="iet" onclick="abrirInfo('e5')" title="O que faz esta etapa?">i</button>
           <span class="desc">Livro grande → nota-índice + fatias. <b>Faça antes de levar ao Claude.</b></span>
           <span class="st" id="s5">—</span>
           <div class="acoes">
@@ -1231,7 +1291,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">6</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Validar</h3>
+          <h3>Validar</h3><button class="iet" onclick="abrirInfo('e6')" title="O que faz esta etapa?">i</button>
           <span class="desc">Âncoras íntegras · YAML coerente com o tipo de fonte.</span>
           <span class="st" id="s6">—</span>
           <div class="acoes"><button data-a onclick="acao('validar')">Validar</button></div>
@@ -1243,7 +1303,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">7</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Auditar</h3>
+          <h3>Auditar</h3><button class="iet" onclick="abrirInfo('e7')" title="O que faz esta etapa?">i</button>
           <span class="desc">O gerado <b>serve</b> ao segundo cérebro? Relatório com pendências.</span>
           <span class="st" id="s7">—</span>
           <div class="acoes">
@@ -1265,7 +1325,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">8</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Publicar</h3>
+          <h3>Publicar</h3><button class="iet" onclick="abrirInfo('e8')" title="O que faz esta etapa?">i</button>
           <span class="desc">Distribui <b>3-MARKDOWN-LIMPO</b> no vault por regra (tipo→pasta). Nota reprovada não entra; em conflito, o vault vence.</span>
           <span class="st" id="s8">—</span>
           <div class="acoes">
@@ -1285,7 +1345,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">9</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Auditar vault</h3>
+          <h3>Auditar vault</h3><button class="iet" onclick="abrirInfo('e9')" title="O que faz esta etapa?">i</button>
           <span class="desc">O <b>grafo</b> está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs.</span>
           <span class="st" id="s9">—</span>
           <div class="acoes">
@@ -1305,7 +1365,7 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">10</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Radar</h3>
+          <h3>Radar</h3><button class="iet" onclick="abrirInfo('e10')" title="O que faz esta etapa?">i</button>
           <span class="desc">Correlaciona os achados de <b>Radar/</b> (Cowork, Módulo E) às notas que os citam — por identificador, não por palpite.</span>
           <span class="st" id="s10">—</span>
           <div class="acoes">
@@ -1344,6 +1404,11 @@ tr:hover td{background:var(--surf2)}
     <div class="diag" id="diag"></div>
   </div>
 </aside>
+
+<!-- MODAL · O QUE FAZ ESTA ETAPA -->
+<div class="imod-bg" id="infoBg">
+  <div class="imod" id="infoMod" role="dialog" aria-label="Sobre a etapa"></div>
+</div>
 
 <div class="nota">
 <b>Sigilo.</b> Tudo roda na sua máquina (WSL2) — nada vai para a internet.
@@ -1607,7 +1672,75 @@ async function salvar(campos){
 function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acervo'}); }
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
-document.addEventListener('keydown', e => { if(e.key === 'Escape') fecharAmbiente(); });
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); }
+});
+
+/* ---------- modal "o que faz esta etapa" ---------- */
+const INFO = {
+ e1:{t:'1 · Triagem — o raio-X, sem alterar nada',
+  o:'Roda o <code>aplicar_ocr.sh</code> em <b>modo simulação</b>: examina cada PDF página a página (tem camada de texto? é digitalizado?), detecta o idioma e infere o tipo provável pelo nome e pelo conteúdo. Nenhum arquivo é alterado.',
+  a:[['Analisar','executa <code>aplicar_ocr.sh</code> (dry-run) na pasta do acervo e grava a planilha <code>controle.csv</code>, que preenche a tabela da seção 04 e guia as etapas seguintes.']],
+  s:'<code>controle.csv</code> na pasta do acervo. Revise a tabela da seção 04 — ela é o seu checkpoint.'},
+ e2:{t:'2 · OCR — torna os digitalizados pesquisáveis',
+  o:'Aplica reconhecimento de texto (<code>ocrmypdf</code>) <b>só nos PDFs que precisam</b>, no idioma detectado na triagem. O original é preservado: nasce uma cópia <code>nome_OCR.pdf</code>. PDFs que já têm texto são pulados. Durante o processamento, este card mostra o arquivo atual e a barra de progresso; o log completo corre na seção 02.',
+  a:[['Aplicar OCR','executa <code>aplicar_ocr.sh</code> (sem dry-run, modo manter). Livro digitalizado grande pode levar mais de uma hora — acompanhe pelo sinal de vida.']],
+  s:'Cópias <code>_OCR.pdf</code> ao lado dos originais e a coluna <i>ocr_status</i> do <code>controle.csv</code> atualizada.'},
+ e3:{t:'3 · Paginação — o markdown nasce aqui, com âncoras',
+  o:'Converte PDF pesquisável em Markdown guardando o número de cada página como âncora <code>{{p.NN}}</code> — sem ela não há citação ABNT de livro. A âncora não atrapalha os tipos que não a exigem (lei, acórdão). Digitalizado ainda sem OCR não é convertível: aparece no log como <b>PULADO</b>, com a instrução de voltar à etapa 2.',
+  a:[['Converter pasta','roda <code>injetar_paginas.py</code> (no venv) para cada PDF pesquisável do <code>controle.csv</code>, preferindo a cópia <code>_OCR</code>; o log lista os aptos e os pulados.'],
+     ['📄 / Converter seleção','o mesmo, só nos arquivos que você escolher (pode misturar pastas); valida as âncoras ao final. Aceita ePUB/MOBI via Calibre (sem paginação fixa — aviso no log).'],
+     ['offset / romanas','ajustes de paginação impressa: se a página "1" do livro é a 13ª folha do PDF, offset 12; "romanas até" = nº de folhas do prefácio em algarismos romanos.']],
+  s:'Um <code>.md</code> por PDF em <code>2-MARKDOWN-BRUTO/</code>, com a ficha YAML pré-preenchida (tipo provável e idioma da triagem).'},
+ e4:{t:'4 · Limpar OCR — conserto mecânico, sem IA',
+  o:'O OCR deixa cicatrizes no texto: palavras quebradas por hífen na virada de linha ("tribu- tário"), cabeçalhos e rodapés repetidos em toda página, linhas de ruído. <b>Limpar</b> conserta isso mecanicamente — sem IA, sem custo, sem tocar nas âncoras. É o polimento entre a conversão e o fatiamento.',
+  a:[['Limpar','roda <code>limpar_ocr.py --inplace</code> em <code>2-MARKDOWN-BRUTO/</code>; cria backup <code>.md.bak</code> de cada arquivo alterado.'],
+     ['Corrigir idioma','roda <code>corrigir_idioma.py</code>: redetecta o idioma de cada markdown (no PDF-fonte, preferindo o <code>_OCR</code>; se não der, no próprio texto do md) e conserta o YAML — idioma errado faria a nota sumir de filtros por língua. Caso individual teimoso: no terminal, <code>corrigir_idioma.py arquivo.md --forcar por</code>.']],
+  s:'Os mesmos <code>.md</code>, limpos, com backups <code>.md.bak</code> ao lado.'},
+ e5:{t:'5 · Fatiar — o formato que a IA consome bem',
+  o:'Livro de 800 páginas não cabe numa conversa de IA. O fatiamento divide o markdown grande em <b>fatias</b> de leitura rápida (~N palavras, cortadas em fim de seção) e cria uma <b>nota-índice</b> que as lista (<code>partes:</code>). Cada fatia herda a ficha da obra. Faça <b>antes</b> de levar ao Projeto Claude.',
+  a:[['Fatiar','roda <code>fatiar.py</code> sobre <code>2-MARKDOWN-BRUTO/</code> gravando em <code>3-MARKDOWN-LIMPO/</code>; o campo numérico define as palavras por fatia (padrão 1200).'],
+     ['Normalizar','roda <code>normalizar_yaml.py</code>: deixa area/tags/autoria no formato que o Obsidian e o Dataview exigem. Não inventa vigência — status desconhecido vira <i>A-conferir</i>.']],
+  s:'Nota-índice + fatias em <code>3-MARKDOWN-LIMPO/</code> — é isto que se publica no vault.'},
+ e6:{t:'6 · Validar — as travas de qualidade',
+  o:'Duas verificações que evitam retrabalho lá na frente: <b>âncoras íntegras</b> (nenhuma página se perdeu na conversão/limpeza) e <b>YAML coerente com o tipo</b> (livro exige página e editora; lei não). Metadado errado não dá erro no Obsidian — a nota some dos painéis em silêncio. Validar aqui é o que impede esse silêncio.',
+  a:[['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
+  s:'Relatório no log da seção 02 (não grava arquivo).'},
+ e7:{t:'7 · Auditar — a nota final de cada arquivo',
+  o:'Responde à pergunta "isto <b>serve</b> ao segundo cérebro?": cruza ficha, âncoras e conteúdo e dá a cada arquivo uma nota — <b>PRONTO</b>, <b>PARCIAL</b> (avisos) ou <b>REPROVADO</b> (corrigir antes de publicar; a etapa 8 recusa reprovados).',
+  a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
+     ['📁','escolhe outra pasta para auditar.']],
+  s:'<code>RELATORIO-AUDITORIA.md</code> com as pendências. O refino fino (autor, resumo) é trabalho do Projeto Claude — Fase 3c do WORKFLOW.'},
+ e8:{t:'8 · Publicar — o conteúdo chega ao vault',
+  o:'Distribui <code>3-MARKDOWN-LIMPO/</code> nas pastas certas do vault por <b>regra</b> (tipo→pasta do perfil: doutrina por área, legislação, jurisprudência…), fatias junto do índice. Três travas: nota REPROVADA não entra; <b>copiar, nunca mover</b>; em conflito, <b>o vault vence</b> (sua curadoria manual não é sobrescrita).',
+  a:[['Simular','roda <code>publicar.py --dry</code>: mostra o plano completo (o que iria para onde) sem gravar nada. <b>Sempre simule primeiro.</b>'],
+     ['Publicar','roda <code>publicar.py</code> de verdade e grava <code>RELATORIO-PUBLICACAO.md</code> no vault.'],
+     ['📁','escolhe outro vault (padrão <code>4-OBSIDIAN-VAULT/</code>).']],
+  s:'Notas copiadas ao vault + <code>RELATORIO-PUBLICACAO.md</code>. Abra o Obsidian e navegue pelos MOCs.'},
+ e9:{t:'9 · Auditar vault — o grafo está íntegro?',
+  o:'O que nenhuma checagem arquivo-a-arquivo enxerga: fatia órfã, <code>partes:</code> que não bate com as fatias reais, wikilink quebrado, vocabulário fora do perfil (a nota <b>some dos painéis</b> Dataview sem erro), área sem MOC, nome duplicado.',
+  a:[['Auditar vault','roda <code>auditar_vault.py --detalhado</code> no vault e grava <code>RELATORIO-VAULT.md</code> — cada achado vem com a causa e a correção.']],
+  s:'<code>RELATORIO-VAULT.md</code> dentro do vault (abra no próprio Obsidian).'},
+ e10:{t:'10 · Radar — o cérebro continua vivo',
+  o:'As novidades (leis alteradas, julgados novos) coletadas pelo assistente na pasta <code>Radar/</code> são cruzadas com as notas do acervo que as citam — por <b>identificador forte</b> (Lei nº, Tema, Súmula, nº CNJ), não por palpite. O radar <b>sinaliza</b>; a decisão de reclassificar é sempre sua.',
+  a:[['Fila de revisão','roda <code>radar.py</code>: correlaciona os achados novos e grava <code>RELATORIO-RADAR.md</code> com a fila do que conferir.'],
+     ['Sinalizar A-conferir','roda <code>radar.py --aplicar</code>: marca <code>status: A-conferir</code> nas notas afetadas — elas aparecem no painel de pendências do MOC até você despachar.']],
+  s:'<code>RELATORIO-RADAR.md</code> + notas afetadas sinalizadas (se você aplicar).'},
+};
+function abrirInfo(id){
+  const i = INFO[id]; if(!i) return;
+  infoMod.innerHTML =
+    `<div style="display:flex;align-items:flex-start;gap:10px">
+       <h3>${i.t}</h3>
+       <button class="fechar" onclick="fecharInfo()" title="fechar (Esc)">✕</button></div>
+     <p>${i.o}</p>
+     <div class="sub">O que cada botão executa</div>
+     <div class="bt">${i.a.map(([b,d])=>`<b>${b}</b><span>${d}</span>`).join('')}</div>
+     <div class="sub">Resultado no disco</div><p>${i.s}</p>`;
+  infoBg.classList.add('on');
+}
+function fecharInfo(){ infoBg.classList.remove('on'); }
+infoBg.addEventListener('click', e => { if(e.target === infoBg) fecharInfo(); });
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
@@ -1627,6 +1760,42 @@ async function acao(a,extra){
   const j = await r.json();
   if(!j.ok) alert(j.msg);
   estado();
+}
+
+/* ---------- progresso da etapa em execução (dentro do card) ---------- */
+const CARD_DA_ACAO = Object.assign(
+  {arquivo:'e3', corrigir_idioma:'e4', normalizar:'e5'}, ETAPA_DA_ACAO);
+const cardProg = document.createElement('div');
+cardProg.className = 'etprog';
+function renderProg(j){
+  const cardId = (j.running && CARD_DA_ACAO[j.action]) || '';
+  if(!cardId){ cardProg.remove(); return; }
+  const alvo = document.querySelector('#'+cardId+' .conteudo');
+  if(alvo && cardProg.parentElement !== alvo) alvo.appendChild(cardProg);
+  // 1ª linha do log é o comando ($ ...) — contém os marcadores e enganaria a barra
+  const lg = (j.log || '').split('\n').slice(1).join('\n');
+  const ms = [...lg.matchAll(/\[(\d+)\/(\d+)\]\s*([^\n]*)/g)];
+  let html;
+  if(ms.length){
+    const m = ms[ms.length-1], at = +m[1], tot = +m[2];
+    const arq = (m[3]||'').split(' ... ')[0].split(' | ')[0].trim();
+    // sinal de vida do OCR: quanto tempo o arquivo ATUAL está levando
+    const trecho = lg.slice(lg.lastIndexOf(m[0]));
+    const hb = [...trecho.matchAll(/OCR em andamento ha (\S+)/g)];
+    const extra = hb.length ? ' · ' + hb[hb.length-1][1] + ' neste arquivo' : '';
+    const nOk = (lg.match(/OK -> /g)||[]).length;
+    const nFa = (lg.match(/FALHOU \(rc=/g)||[]).length;
+    const saldo = (nOk||nFa) ? ` &nbsp;·&nbsp; <span style="color:var(--ok)">✓ ${nOk}</span>`
+                    + (nFa?` · <span style="color:var(--err)">✗ ${nFa}</span>`:'') : '';
+    html = `<div class="ptxt"><span class="spin"></span>
+        <span class="parq">processando <b>${at}/${tot}</b> — ${esc(arq)}${esc(extra)}</span>${saldo}</div>
+      <div class="pbar"><div class="pfill" style="width:${Math.round(100*(at-.5)/tot)}%"></div></div>`;
+  } else {
+    html = `<div class="ptxt"><span class="spin"></span> em execução — o log corre na seção 02</div>`;
+  }
+  if(cardProg.innerHTML !== html) cardProg.innerHTML = html;
+  const st = document.getElementById('s'+cardId.slice(1));
+  if(st){ st.textContent = '⏳ executando'; st.className = 'st pend'; }
 }
 
 /* ---------- trilho: estado de cada etapa ---------- */
@@ -1749,7 +1918,16 @@ async function estado(){
     stat.innerHTML = `<span><b>${s.csv.length}</b> arquivos</span>
       <span><b>${nOcr}</b> precisam de OCR</span>
       <span><b>${nAnc}</b> exigem âncora de página</span>`;
+
+    // card OCR concluído: diz O QUE aconteceu, não só "nada pendente"
+    if(document.getElementById('e2').className.includes('feito')){
+      const fez = s.csv.filter(r=>r.ocr_status==='ok'||r.ocr_status==='ja_existia').length;
+      const ja  = s.csv.filter(r=>r.ocr_status==='nao_necessario').length;
+      marcar('e2','feito', `${ja} já pesquisáveis · ${fez} OCRizados`, 'ok');
+    }
   }
+
+  renderProg(j);
 }
 renderFila();
 estado(); setInterval(estado, 1500);

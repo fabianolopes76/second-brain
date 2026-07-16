@@ -17,6 +17,10 @@ Uso:
     python3 corrigir_idioma.py 2-MARKDOWN-BRUTO/ --pdfs 0-ENTRADA/
     python3 corrigir_idioma.py livro.md --pdf livro.pdf
     python3 corrigir_idioma.py 2-MARKDOWN-BRUTO/ --pdfs . --dry
+    python3 corrigir_idioma.py livro.md --forcar por   # manual, sem detecção
+
+Ordem de detecção: PDF-fonte (preferindo a cópia _OCR, que tem camada de
+texto) → texto do próprio markdown → --forcar (decisão humana).
 """
 
 import argparse
@@ -81,14 +85,20 @@ def achar_pdf(md: Path, pastas):
     alvos.discard("")
 
     # os.walk não usa glob → imune a [ ] ( ) nos nomes
+    candidatos = []
     for pasta in pastas:
         for raiz, _dirs, arqs in os.walk(pasta):
             for a in arqs:
                 if not a.lower().endswith(".pdf"):
                     continue
                 if chave(Path(a).stem) in alvos:
-                    return Path(raiz) / a
-    return None
+                    candidatos.append(Path(raiz) / a)
+    if not candidatos:
+        return None
+    # chave() iguala X.pdf e X_OCR.pdf — preferir o _OCR: é o que TEM camada
+    # de texto (o original escaneado faria a detecção falhar à toa).
+    candidatos.sort(key=lambda p: (not p.stem.endswith("_OCR"), str(p)))
+    return candidatos[0]
 
 
 def aplicar(md: Path, idioma: str, dry: bool) -> str:
@@ -129,12 +139,22 @@ def main():
     ap.add_argument("--pdf", help="PDF-fonte (para arquivo único)")
     ap.add_argument("--pdfs", nargs="*", default=[],
                     help="pasta(s) onde procurar os PDFs-fonte")
+    ap.add_argument("--forcar", metavar="IDIOMA",
+                    help="não detecta: grava este idioma (por/eng/deu/fra/ita/spa) "
+                         "no markdown indicado — correção manual, arquivo a arquivo")
     ap.add_argument("--dry", action="store_true", help="só mostra, não grava")
     a = ap.parse_args()
 
     alvo = Path(a.alvo)
     if not alvo.exists():
         sys.exit(f"ERRO: não encontrei {alvo}")
+    if a.forcar and a.forcar not in NOMES:
+        sys.exit(f"ERRO: idioma desconhecido '{a.forcar}' — use um de: "
+                 f"{', '.join(sorted(NOMES))}")
+    if a.forcar and alvo.is_dir():
+        sys.exit("ERRO: --forcar é correção MANUAL, arquivo a arquivo — passe o "
+                 ".md específico, não a pasta (forçar um idioma no lote inteiro "
+                 "sobrescreveria detecções corretas).")
 
     arquivos = ([f for f in sorted(alvo.rglob("*.md"))
                  if not f.name.startswith(("RELATORIO", "_"))]
@@ -146,18 +166,24 @@ def main():
 
     mudou = 0
     for md in arquivos:
-        pdf = Path(a.pdf) if a.pdf else achar_pdf(md, pastas)
-        if not pdf or not pdf.exists():
-            print(f"?  {md.name[:52]:54} PDF-fonte não encontrado — pulado")
-            continue
-        idi = detectar(pdf)
+        origem = ""
+        if a.forcar:
+            idi, origem = a.forcar, "  [forçado]"
+        else:
+            pdf = Path(a.pdf) if a.pdf else achar_pdf(md, pastas)
+            idi = detectar(pdf) if pdf and pdf.exists() else ""
+            if not idi:
+                # PDF sem camada de texto (ou ausente): o markdown JÁ convertido
+                # tem o texto — detectar nele resolve sem exigir OCR de novo.
+                idi = detectar(md)
+                origem = "  [pelo texto do md]" if idi else ""
         if not idi:
-            print(f"!  {md.name[:52]:54} não deu para detectar "
-                  f"(PDF escaneado? rode OCR antes)")
+            print(f"!  {md.name[:52]:54} não deu para detectar (PDF sem OCR e "
+                  f"md sem texto) — corrija à mão: --forcar por (ou eng/deu/...)")
             continue
         r = aplicar(md, idi, a.dry)
         marca = "✓" if "corrigido" in r or "dry" in r else "—"
-        print(f"{marca}  {md.name[:52]:54} {r}")
+        print(f"{marca}  {md.name[:52]:54} {r}{origem}")
         if "→" in r:
             mudou += 1
 
