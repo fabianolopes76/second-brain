@@ -788,12 +788,23 @@ def listar_fichas():
         if f.name.startswith(("RELATORIO", "_")):
             continue
         try:
-            fm = frontmatter.ler(
-                f.read_text(encoding="utf-8", errors="replace")).campos
+            texto = f.read_text(encoding="utf-8", errors="replace")
+            fm = frontmatter.ler(texto).campos
             r = _auditar_arquivo(f)
         except Exception:
             continue
         aut = fm.get("autoria")
+        # o que a AUTOMAÇÃO atribuiu e pede confirmação humana: palpite da
+        # triagem, tipo derivado do tipo_fonte, status/confiabilidade A-conferir
+        revisar = []
+        if "# palpite da triagem" in texto:
+            revisar.append("tipo_fonte é palpite da triagem")
+        if "# derivado do tipo_fonte" in texto:
+            revisar.append("tipo derivado automaticamente")
+        if str(fm.get("status") or "") == "A-conferir":
+            revisar.append("status A-conferir")
+        if str(fm.get("confiabilidade") or "") == "A-conferir":
+            revisar.append("confiabilidade A-conferir")
         out.append({
             "arquivo": f.name,
             "tipo_fonte": str(fm.get("tipo_fonte") or ""),
@@ -801,7 +812,9 @@ def listar_fichas():
             "ano": str(fm.get("ano") or ""),
             "autoria": "; ".join(aut) if isinstance(aut, list) else str(aut or ""),
             "nota": _nota_auditoria(r),
-            "erros": r.get("erros", [])[:3],
+            "erros": r.get("erros", [])[:4],
+            "n_avisos": len(r.get("avisos", [])),
+            "revisar": revisar,
         })
     return out
 
@@ -1196,6 +1209,18 @@ button:disabled{opacity:.4;cursor:not-allowed}
   border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px}
 .sov-body{padding:16px 18px;overflow-y:auto}
 .sov-dica{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+.sover.fichas{width:min(580px,94vw)}
+.fitem{border:1px solid var(--line);border-radius:10px;padding:9px 11px;
+  margin-bottom:8px;background:var(--surf2)}
+.fitem .fnome{font-weight:600;font-size:12.5px;display:flex;gap:8px;
+  align-items:center;justify-content:space-between}
+.fitem .fnome span{overflow-wrap:anywhere}
+.fitem .fdet{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.55}
+.fitem .fdet .err{color:var(--err)} .fitem .fdet .rev{color:var(--warn)}
+.fgrupo{font:600 10.5px var(--sans);letter-spacing:.08em;
+  text-transform:uppercase;margin:14px 0 7px}
+.fgrupo:first-child{margin-top:0}
+.fgrupo.err{color:var(--err)} .fgrupo.warn{color:var(--warn)} .fgrupo.ok{color:var(--ok)}
 .sover .diag{grid-template-columns:1fr}
 .d{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:5px 8px;border-radius:6px}
 .d:hover{background:var(--surf2)}
@@ -1470,7 +1495,10 @@ tr:hover td{background:var(--surf2)}
           <h3>Validar</h3><button class="iet" onclick="abrirInfo('e6')" title="O que faz esta etapa?">i</button>
           <span class="desc">Âncoras íntegras · YAML coerente com o tipo de fonte.</span>
           <span class="st" id="s6">—</span>
-          <div class="acoes"><button data-a onclick="acao('validar')">Validar</button></div>
+          <div class="acoes">
+            <button onclick="abrirFichas()" title="todas as fichas, com o que merece atenção — ajuste manual e confirmação do que a automação atribuiu">📋 Fichas</button>
+            <button data-a onclick="acao('validar')">Validar</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1569,31 +1597,25 @@ tr:hover td{background:var(--surf2)}
   <div class="stat" id="stat"></div>
 </section>
 
-<!-- 05 FICHAS -->
-<section>
-  <div class="head"><span class="n">05</span><h2>Fichas</h2>
-    <p>correção <b>manual</b> do YAML quando a automação não resolve — salve e a validação reavalia na hora</p></div>
-  <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-    <button class="bnav" onclick="carregarFichas()">🔄 Carregar fichas</button>
-    <span class="dica" id="fichasInfo"></span>
-  </div>
-  <div class="tw"><table>
-    <thead><tr><th>Arquivo</th><th>tipo_fonte</th><th>tipo</th><th>Ano</th><th>Autoria</th><th>Validação</th><th></th></tr></thead>
-    <tbody id="fichasTb"><tr><td colspan="7" style="color:var(--muted);padding:14px">Clique em "🔄 Carregar fichas" (lê o 2-MARKDOWN-BRUTO).</td></tr></tbody>
-  </table></div>
-  <div class="dica">O mestre é o <b>2-MARKDOWN-BRUTO</b>: corrija aqui e <b>refatie</b> (etapa 5) — as fatias herdam a ficha do índice. No formulário, campo deixado <b>em branco não mexe</b> no arquivo.</div>
-</section>
-
-<!-- SLIDEOVER · FICHA -->
+<!-- SLIDEOVER · FICHAS (lista + edição) -->
 <div class="sov-bg" id="fsovBg" onclick="fecharFicha()"></div>
-<aside class="sover" id="fsov" aria-label="Editar ficha">
-  <div class="sov-head"><h2 id="fsovTit" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">✎ Ficha</h2>
+<aside class="sover fichas" id="fsov" aria-label="Fichas">
+  <div class="sov-head">
+    <button class="fechar" id="fVoltar" onclick="voltarFichas()" title="voltar à lista" hidden>←</button>
+    <h2 id="fsovTit" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📋 Fichas</h2>
     <button class="fechar" onclick="fecharFicha()" title="fechar (Esc)">✕</button></div>
   <div class="sov-body">
-    <p class="sov-dica" id="fsovErros"></p>
-    <div id="fichaForm"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="primary" onclick="salvarFicha()" style="flex:1">💾 Salvar e revalidar</button>
+    <div id="fichaLista">
+      <p class="sov-dica" id="fichasInfo">carregando…</p>
+      <div id="fichasItens"></div>
+      <p class="sov-dica" style="margin-top:12px">O mestre é o <b>2-MARKDOWN-BRUTO</b>: corrija aqui e <b>refatie</b> (etapa 5) — as fatias herdam a ficha do índice.</p>
+    </div>
+    <div id="fichaEdicao" hidden>
+      <p class="sov-dica" id="fsovErros"></p>
+      <div id="fichaForm"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="primary" onclick="salvarFicha()" style="flex:1">💾 Salvar e revalidar</button>
+      </div>
     </div>
   </div>
 </aside>
@@ -1909,8 +1931,9 @@ const INFO = {
   s:'Nota-índice + fatias em <code>3-MARKDOWN-LIMPO/</code> — é isto que se publica no vault.'},
  e6:{t:'6 · Validar — as travas de qualidade',
   o:'Duas verificações que evitam retrabalho lá na frente: <b>âncoras íntegras</b> (nenhuma página se perdeu na conversão/limpeza) e <b>YAML coerente com o tipo</b> (livro exige página e editora; lei não). Metadado errado não dá erro no Obsidian — a nota some dos painéis em silêncio. Validar aqui é o que impede esse silêncio.',
-  a:[['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
-  s:'Relatório no log da seção 02 (não grava arquivo). O que a automação não resolver, corrija na seção <b>05 · Fichas</b>: formulário com os campos que o tipo exige e sugestão de referência ABNT com um clique.'},
+  a:[['📋 Fichas','abre o painel lateral com <b>todas</b> as fichas em 3 grupos: ✗ <b>Corrigir</b> (bloqueiam a publicação), ⚠ <b>Conferir</b> (o que a automação atribuiu — palpite de tipo_fonte, tipo derivado, A-conferir — para você confirmar) e ✓ Prontas. "✎ Editar" abre o formulário com os campos que o tipo exige e a sugestão de referência ABNT com um clique; salvar revalida na hora.'],
+     ['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
+  s:'Relatório no log da seção 02 (não grava arquivo). Correções e confirmações: botão <b>📋 Fichas</b> ao lado.'},
  e7:{t:'7 · Auditar — a nota final de cada arquivo',
   o:'Responde à pergunta "isto <b>serve</b> ao segundo cérebro?": cruza ficha, âncoras e conteúdo e dá a cada arquivo uma nota — <b>PRONTO</b>, <b>PARCIAL</b> (avisos) ou <b>REPROVADO</b> (corrigir antes de publicar; a etapa 8 recusa reprovados).',
   a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
@@ -1947,28 +1970,54 @@ function abrirInfo(id){
 function fecharInfo(){ infoBg.classList.remove('on'); }
 infoBg.addEventListener('click', e => { if(e.target === infoBg) fecharInfo(); });
 
-/* ---------- fichas: correção manual do YAML ---------- */
+/* ---------- fichas: slideover do grupo Qualidade ---------- */
 let VOCAB = null, FICHA_ARQ = '', F_CAMPOS = {};
 const F_SEL = {tipo_fonte:'tipos_fonte', tipo:'tipos', area:'areas',
                status:'status', confiabilidade:'confiabilidade'};
+function abrirFichas(){
+  fsovBg.classList.add('on'); fsov.classList.add('on');
+  FICHA_ARQ = '';
+  voltarFichas();
+  carregarFichas();
+}
+function voltarFichas(){
+  fichaEdicao.hidden = true; fichaLista.hidden = false; fVoltar.hidden = true;
+  fsovTit.textContent = '📋 Fichas — o que merece atenção';
+  if(FICHA_ARQ){ FICHA_ARQ=''; carregarFichas(); }  // volta atualizada após editar
+}
 async function carregarFichas(){
-  fichasInfo.textContent = 'carregando…';
+  fichasInfo.textContent = 'carregando e validando cada ficha…';
+  fichasItens.innerHTML = '';
   if(!VOCAB) VOCAB = await (await fetch('/api/vocab')).json();
   const fs = await (await fetch('/api/fichas')).json();
-  const pill = n => n==='PRONTO' ? 'ok' : (n==='REPROVADO' ? 'no' : 'sim');
-  fichasTb.innerHTML = fs.length ? fs.map(f=>`<tr>
-      <td title="${esc(f.erros.join(' | '))}">${esc(f.arquivo)}</td>
-      <td>${f.tipo_fonte?esc(f.tipo_fonte):'<span style="color:var(--err)">✗ falta</span>'}</td>
-      <td>${esc(f.tipo)}</td><td>${esc(f.ano)}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.autoria)}</td>
-      <td><span class="pill ${pill(f.nota)}">${esc(f.nota)}</span></td>
-      <td><button class="bnav" onclick="abrirFicha(${q(f.arquivo)})">✎ Editar</button></td>
-    </tr>`).join('')
-    : `<tr><td colspan="7" style="color:var(--muted);padding:14px">Nenhum markdown em 2-MARKDOWN-BRUTO — converta antes (etapa 3).</td></tr>`;
-  const nOk = fs.filter(f=>f.nota==='PRONTO').length;
-  fichasInfo.textContent = fs.length
-    ? `${fs.length} nota(s) · ${nOk} PRONTO · ${fs.length-nOk} com pendência (passe o mouse no nome para ver)`
-    : '';
+  if(!fs.length){
+    fichasInfo.textContent = 'Nenhum markdown em 2-MARKDOWN-BRUTO — converta antes (etapa 3).';
+    return;
+  }
+  const corrigir = fs.filter(f=>f.nota==='REPROVADO');
+  const conferir = fs.filter(f=>f.nota!=='REPROVADO' && (f.revisar.length || f.nota!=='PRONTO'));
+  const prontas  = fs.filter(f=>f.nota==='PRONTO' && !f.revisar.length);
+  fichasInfo.innerHTML = `<b>${fs.length}</b> nota(s) — ` +
+    `<span style="color:var(--err)">${corrigir.length} corrigir</span> · ` +
+    `<span style="color:var(--warn)">${conferir.length} conferir</span> · ` +
+    `<span style="color:var(--ok)">${prontas.length} prontas</span>`;
+  const item = f => `<div class="fitem">
+      <div class="fnome"><span>${esc(f.arquivo)}</span>
+        <button class="bnav" onclick="abrirFicha(${q(f.arquivo)})">✎ Editar</button></div>
+      <div class="fdet">
+        ${f.tipo_fonte ? `tipo_fonte <b>${esc(f.tipo_fonte)}</b>` : '<span class="err">✗ sem tipo_fonte</span>'}` +
+      `${f.tipo ? ` · tipo <b>${esc(f.tipo)}</b>` : ''}${f.ano ? ` · ${esc(f.ano)}` : ''}` +
+      `${f.autoria ? ` · ${esc(f.autoria)}` : ''}
+        ${f.erros.length ? `<br><span class="err">✗ ${f.erros.map(esc).join('</span><br><span class="err">✗ ')}</span>` : ''}
+        ${f.revisar.length ? `<br><span class="rev">⚠ ${f.revisar.map(esc).join(' · ')}</span>` : ''}
+        ${f.n_avisos ? `<br><span class="rev">⚠ ${f.n_avisos} aviso(s) na auditoria</span>` : ''}
+      </div></div>`;
+  const grupo = (t, cls, arr) => arr.length
+    ? `<div class="fgrupo ${cls}">${t} (${arr.length})</div>` + arr.map(item).join('') : '';
+  fichasItens.innerHTML =
+      grupo('✗ Corrigir — bloqueiam a publicação', 'err', corrigir)
+    + grupo('⚠ Conferir — a automação atribuiu; você confirma', 'warn', conferir)
+    + grupo('✓ Prontas', 'ok', prontas);
 }
 async function abrirFicha(arq){
   if(!VOCAB) VOCAB = await (await fetch('/api/vocab')).json();
@@ -1977,7 +2026,7 @@ async function abrirFicha(arq){
   fsovTit.textContent = '✎ ' + arq;
   fsovErros.textContent = '';
   renderFicha();
-  fsovBg.classList.add('on'); fsov.classList.add('on');
+  fichaLista.hidden = true; fichaEdicao.hidden = false; fVoltar.hidden = false;
 }
 function campoFicha(c){
   const v = F_CAMPOS[c] || '';
@@ -2035,7 +2084,6 @@ async function salvarFicha(){
       (r.erros.length ? ' — falta: ' + esc(r.erros.slice(0,3).join(' | ')) : '');
   F_CAMPOS = await (await fetch('/api/ficha?arq='+encodeURIComponent(FICHA_ARQ))).json();
   renderFicha();
-  carregarFichas();
 }
 function fecharFicha(){ fsovBg.classList.remove('on'); fsov.classList.remove('on'); }
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode

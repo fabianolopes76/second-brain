@@ -5,6 +5,21 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.12.0] — 2026-07-16 · Fichas viram mesa de revisão no grupo Qualidade
+
+### Alterado
+- **A entrada das Fichas mudou da seção 05 para o grupo QUALIDADE do
+  trilho** (botão 📋 Fichas ao lado do Validar), e a listagem virou um
+  **slide-over** com todos os processamentos separados pelo que merece
+  atenção: **✗ Corrigir** (REPROVADAS — bloqueiam a publicação),
+  **⚠ Conferir** (o que a automação atribuiu e espera confirmação
+  humana: `tipo_fonte` palpite da triagem, `tipo` derivado, status/
+  confiabilidade `A-conferir`, avisos da auditoria) e **✓ Prontas**.
+  O ✎ Editar abre o formulário no mesmo painel, com ← voltar à lista
+  já revalidada.
+- `/api/fichas` passa a sinalizar as atribuições automáticas
+  (`revisar`) e a contagem de avisos da auditoria.
+
 ## [3.11.1] — 2026-07-16 · Cópia `_OCR` órfã volta a ser fonte (reprocessamento do zero)
 
 ### Corrigido
