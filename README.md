@@ -1,6 +1,6 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
-**Versão 3.9.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+**Versão 3.10.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
 
 Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 

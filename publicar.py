@@ -88,13 +88,24 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     detalhes = defaultdict(list)   # categoria → linhas p/ relatório
     stats = {"area": Counter(), "tipo": Counter(), "status": Counter()}
     a_conferir = []
+    nao_publicou = {}              # stem do índice → razão (gate das fatias)
+    retidos = Counter()            # (obra, razão) → nº de fatias retidas
 
-    for p in planos:
+    # Índices ANTES das fatias: fatia publicada sem índice nasce ÓRFÃ no
+    # vault (o auditar_vault acusaria em seguida) — se o índice da obra não
+    # entrou (sem rota ou reprovado), as fatias ficam RETIDAS junto dele.
+    for p in ([x for x in planos if not x["eh_fatia"]]
+              + [x for x in planos if x["eh_fatia"]]):
         f, fm = p["path"], p["fm"]
 
         # ── destino ──
         if p["eh_fatia"]:
-            rel = destino_indice.get(alvo_wikilink(fm.get("obra")))
+            obra = alvo_wikilink(fm.get("obra"))
+            if obra in nao_publicou:
+                resultado["retido"] += 1
+                retidos[(obra, nao_publicou[obra])] += 1
+                continue
+            rel = destino_indice.get(obra)
             if rel is None:
                 rel, motivo = destino_de(fm, f.stem)   # órfã: roteia por conta própria
                 if rel is None:
@@ -106,6 +117,7 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
             if rel is None:
                 resultado["bloqueado"] += 1
                 detalhes["bloqueado"].append(f"{f.name} — {motivo}")
+                nao_publicou[f.stem] = f"índice sem rota ({motivo.split(' — ')[0]})"
                 continue
 
         # ── TRAVA 1: validação verde (fatias herdam do índice; auditar já sabe) ──
@@ -114,6 +126,9 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
             resultado["reprovado"] += 1
             detalhes["reprovado"].append(
                 f"{f.name} — {'; '.join(r['erros'][:2])}")
+            if not p["eh_fatia"]:
+                nao_publicou[f.stem] = ("índice REPROVADO na auditoria — "
+                                        "complete a ficha (refino) e republique")
             continue
 
         alvo = vault / rel / f.name
@@ -151,15 +166,24 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
                             + str(fm.get("confiabilidade") or "")):
             a_conferir.append(etiqueta)
 
+    # fatias retidas: UMA linha por obra, não uma por fatia (696 linhas
+    # idênticas ensinam a não ler o relatório)
+    for (obra, razao), n in sorted(retidos.items()):
+        detalhes["retido"].append(f'{n} fatia(s) de "{obra}" retidas com o índice: {razao}')
+
     # ── console ──
     modo = "DRY-RUN — nada gravado" if dry else "publicação efetiva"
     print(f"\n{'='*72}\nPUBLICAÇÃO — {origem} → {vault}  ({modo})\n{'='*72}")
+    LIMITE = 20
     for cat in ("publicado", "sobrescrito", "inalterado", "conflito",
-                "reprovado", "bloqueado"):
+                "reprovado", "bloqueado", "retido"):
         if resultado[cat]:
             print(f"{cat:12}: {resultado[cat]}")
-            for linha in detalhes[cat]:
-                print(f"    {'✗' if cat in ('conflito','reprovado','bloqueado') else '→'} {linha}")
+            for linha in detalhes[cat][:LIMITE]:
+                print(f"    {'✗' if cat in ('conflito','reprovado','bloqueado','retido') else '→'} {linha}")
+            excedente = len(detalhes[cat]) - LIMITE
+            if excedente > 0:
+                print(f"    … e mais {excedente} — lista completa no RELATORIO-PUBLICACAO.md")
 
     # ── relatório no vault (a Fase 5 do WORKFLOW pede exatamente isto) ──
     if not dry:
@@ -167,7 +191,7 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         L.append("| resultado | qtd |")
         L.append("|---|---|")
         for cat in ("publicado", "sobrescrito", "inalterado", "conflito",
-                    "reprovado", "bloqueado"):
+                    "reprovado", "bloqueado", "retido"):
             if resultado[cat]:
                 L.append(f"| {cat} | {resultado[cat]} |")
         for eixo in ("area", "tipo", "status"):
@@ -177,7 +201,7 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         if a_conferir:
             L += ["", "## ⚠ Itens A-conferir (não citar sem revisão humana)", ""]
             L += [f"- {x}" for x in a_conferir]
-        for cat in ("conflito", "reprovado", "bloqueado"):
+        for cat in ("conflito", "reprovado", "bloqueado", "retido"):
             if detalhes[cat]:
                 L += ["", f"## ✗ {cat.capitalize()}s", ""]
                 L += [f"- {x}" for x in detalhes[cat]]

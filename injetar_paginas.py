@@ -135,6 +135,12 @@ def main():
                   f'# Edicao segue a lingua do documento: {EDICAO[idi]}\n')
     if tf:
         extra += f'tipo_fonte: {tf}                 # palpite da triagem — REVISE\n'
+        # `tipo` (eixo Doutrina/Legislação/...) só quando decorre SEM
+        # ambiguidade do tipo_fonte — sem ele a nota não tem rota de
+        # publicação e some dos painéis do MOC.
+        tp = taxonomia.tipo_unico_de(tf)
+        if tp:
+            extra += f'tipo: {tp}                 # derivado do tipo_fonte — REVISE\n'
         if loc_tipo is not None:
             extra += (f"localizador_tipo: {loc_tipo}\n"
                       f'localizador_abrev: "{loc_ab}"\n')

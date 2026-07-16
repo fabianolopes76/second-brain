@@ -5,6 +5,35 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.10.0] — 2026-07-16 · Publicação: relatório legível, `tipo` derivável e fatias sem órfãs
+
+Incidente investigado: publicar 715 notas bloqueadas gerou **715 linhas
+idênticas** de "tipo '(vazio)' sem pasta de publicação". O portão estava
+certo (nota sem `tipo` não tem rota e sumiria dos painéis) — o problema
+era a legibilidade e o trabalho manual que o aviso cobrava.
+
+### Adicionado
+- **`taxonomia.tipo_unico_de(tipo_fonte)`**: o `tipo` funcional que decorre
+  **sem ambiguidade** do tipo_fonte (legislacao→Legislação, livro→Doutrina;
+  jurisprudencia→"" — humano decide entre Jurisprudência e Súmula).
+- **`tipo` carimbado no nascimento** (`injetar_paginas.py`) e **preenchido
+  no backfill** (`normalizar_yaml.py`) quando inequívoco, sempre com
+  `# derivado do tipo_fonte — REVISE`. Nada é inventado: caso ambíguo
+  continua vazio para o refino decidir.
+- **Categoria `retido` no `publicar.py`**: se o índice de uma obra não
+  publica (sem rota ou REPROVADO), as fatias ficam **retidas com ele** —
+  antes poderiam publicar sozinhas e nascer órfãs no vault (exatamente o
+  que o `auditar_vault` acusa).
+
+### Alterado
+- **Relatório do `publicar.py` agrupado**: fatias barradas viram **uma
+  linha por obra** com contagem e razão ("640 fatias de X retidas com o
+  índice: …"); console limita a 20 linhas por categoria (lista completa no
+  `RELATORIO-PUBLICACAO.md`). No acervo real do incidente: 715 linhas → 8.
+- **Normalizar no painel cobre também o `3-MARKDOWN-LIMPO`** (é dele que o
+  Publicar consome — normalizar só o bruto deixava as fatias já geradas
+  sem o `tipo` derivado).
+
 ## [3.9.0] — 2026-07-16 · OCR de documento de duas colunas: log sem paredes de susto
 
 Incidente investigado (Diário Oficial de 96 pgs, duas colunas, elementos

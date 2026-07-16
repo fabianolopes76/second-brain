@@ -420,6 +420,17 @@ def eh_abnt(tipo_fonte):
     return t.abnt if t else True
 
 
+def tipo_unico_de(tipo_fonte):
+    """O `tipo` funcional que decorre SEM AMBIGUIDADE do tipo_fonte, ou "".
+
+    legislacao → "Legislação"; livro → "Doutrina". Onde o mapa admite mais
+    de um tipo (jurisprudencia → Jurisprudência|Súmula), devolve "" — a
+    escolha é do refino humano, nunca de um palpite de script.
+    """
+    permitidos = TIPOS_POR_FONTE.get(tipo_fonte)
+    return permitidos[0] if permitidos and len(permitidos) == 1 else ""
+
+
 def par_coerente(tipo, tipo_fonte):
     """O par (tipo funcional, tipo_fonte ABNT) faz sentido? → (ok, motivo)."""
     if not tipo or not tipo_fonte:

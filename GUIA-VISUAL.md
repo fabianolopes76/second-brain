@@ -164,6 +164,8 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | O painel pergunta "já concluída — continuar?" | Você clicou numa etapa verde. Se foi de propósito (reprocessar), confirme; senão, cancele. |
 | "Converter pasta" respondia "nenhum arquivo exige âncora" | Versão antiga (≤3.7): só convertia livros. Atualize para a **v3.8.0+** — converte todos os PDFs pesquisáveis e lista no log os pulados por falta de OCR. |
 | Corrigir idioma diz "não deu para detectar" | Atualize para a **v3.8.0+** (detecta pela cópia `_OCR` e pelo texto do próprio markdown). Se ainda assim não der, o caso é manual: peça ao suporte para rodar `corrigir_idioma.py arquivo.md --forcar por`. |
+| Publicar: `tipo '(vazio)' sem pasta de publicação` | A nota não tem o campo `tipo` — sem ele não há rota nem painel no MOC. Rode **Normalizar** (etapa 5): ele deriva o `tipo` do tipo_fonte quando não há ambiguidade. O que sobrar (índice REPROVADO, ficha vazia) é o **refino da Fase 3c** — preencha a ficha do índice no Projeto Claude e publique de novo. |
+| Publicar: `N fatia(s) retidas com o índice` | Proposital: fatia sem índice nasceria órfã no vault. Resolva o índice da obra (a razão está na mesma linha) e as fatias entram junto na próxima publicação. |
 
 ---
 

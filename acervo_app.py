@@ -618,16 +618,21 @@ def acao_corrigir_idioma():
 
 
 def acao_normalizar():
-    """Deixa area/tags/autoria no formato que o Obsidian e o Dataview exigem."""
+    """Deixa area/tags/autoria no formato que o Obsidian e o Dataview exigem.
+
+    Cobre o 2-MARKDOWN-BRUTO e TAMBÉM o 3-MARKDOWN-LIMPO (é dele que o
+    Publicar consome — normalizar só o bruto deixava as fatias já geradas
+    sem o `tipo` derivado)."""
     base = Path(CFG["root"])
-    alvo = base / "2-MARKDOWN-BRUTO" / "fatias"
-    if not alvo.is_dir():
-        alvo = base / "2-MARKDOWN-BRUTO"
-    if not alvo.is_dir():
-        return False, "Converta e fatie antes."
     s = Path(CFG["scripts"]) / "normalizar_yaml.py"
-    return JOB.start("Normalizar YAML (Obsidian)",
-                     f'python3 {shlex.quote(str(s))} {shlex.quote(str(alvo))}')
+    alvos = [base / "2-MARKDOWN-BRUTO", base / "3-MARKDOWN-LIMPO"]
+    alvos = [a for a in alvos if a.is_dir()]
+    if not alvos:
+        return False, "Converta antes (não há 2-MARKDOWN-BRUTO nem 3-MARKDOWN-LIMPO)."
+    cmd = " ; ".join(
+        f'echo "=== {a.name} ===" ; python3 {shlex.quote(str(s))} {shlex.quote(str(a))}'
+        for a in alvos)
+    return JOB.start("Normalizar YAML (Obsidian)", cmd)
 
 
 def acao_auditar(pasta=""):
@@ -1703,7 +1708,7 @@ const INFO = {
  e5:{t:'5 · Fatiar — o formato que a IA consome bem',
   o:'Livro de 800 páginas não cabe numa conversa de IA. O fatiamento divide o markdown grande em <b>fatias</b> de leitura rápida (~N palavras, cortadas em fim de seção) e cria uma <b>nota-índice</b> que as lista (<code>partes:</code>). Cada fatia herda a ficha da obra. Faça <b>antes</b> de levar ao Projeto Claude.',
   a:[['Fatiar','roda <code>fatiar.py</code> sobre <code>2-MARKDOWN-BRUTO/</code> gravando em <code>3-MARKDOWN-LIMPO/</code>; o campo numérico define as palavras por fatia (padrão 1200).'],
-     ['Normalizar','roda <code>normalizar_yaml.py</code>: deixa area/tags/autoria no formato que o Obsidian e o Dataview exigem. Não inventa vigência — status desconhecido vira <i>A-conferir</i>.']],
+     ['Normalizar','roda <code>normalizar_yaml.py</code> no 2-MARKDOWN-BRUTO e no 3-MARKDOWN-LIMPO: deixa area/tags/autoria no formato do Obsidian e preenche <code>tipo</code> quando ele decorre sem ambiguidade do tipo_fonte (legislacao→Legislação) — sem <code>tipo</code>, a nota não tem rota de publicação. Não inventa vigência: status desconhecido vira <i>A-conferir</i>.']],
   s:'Nota-índice + fatias em <code>3-MARKDOWN-LIMPO/</code> — é isto que se publica no vault.'},
  e6:{t:'6 · Validar — as travas de qualidade',
   o:'Duas verificações que evitam retrabalho lá na frente: <b>âncoras íntegras</b> (nenhuma página se perdeu na conversão/limpeza) e <b>YAML coerente com o tipo</b> (livro exige página e editora; lei não). Metadado errado não dá erro no Obsidian — a nota some dos painéis em silêncio. Validar aqui é o que impede esse silêncio.',
@@ -1715,7 +1720,7 @@ const INFO = {
      ['📁','escolhe outra pasta para auditar.']],
   s:'<code>RELATORIO-AUDITORIA.md</code> com as pendências. O refino fino (autor, resumo) é trabalho do Projeto Claude — Fase 3c do WORKFLOW.'},
  e8:{t:'8 · Publicar — o conteúdo chega ao vault',
-  o:'Distribui <code>3-MARKDOWN-LIMPO/</code> nas pastas certas do vault por <b>regra</b> (tipo→pasta do perfil: doutrina por área, legislação, jurisprudência…), fatias junto do índice. Três travas: nota REPROVADA não entra; <b>copiar, nunca mover</b>; em conflito, <b>o vault vence</b> (sua curadoria manual não é sobrescrita).',
+  o:'Distribui <code>3-MARKDOWN-LIMPO/</code> nas pastas certas do vault por <b>regra</b> (tipo→pasta do perfil: doutrina por área, legislação, jurisprudência…), fatias junto do índice. Três travas: nota REPROVADA não entra; <b>copiar, nunca mover</b>; em conflito, <b>o vault vence</b> (sua curadoria manual não é sobrescrita). Se o índice de uma obra não publica (sem <code>tipo</code> ou reprovado), as fatias ficam <b>retidas com ele</b> — fatia sem índice nasceria órfã no vault. A rota vem do campo <code>tipo</code>: rode <b>Normalizar</b> (etapa 5) para derivá-lo do tipo_fonte quando não há ambiguidade; a ficha completa (autoria, ano…) é o refino da Fase 3c.',
   a:[['Simular','roda <code>publicar.py --dry</code>: mostra o plano completo (o que iria para onde) sem gravar nada. <b>Sempre simule primeiro.</b>'],
      ['Publicar','roda <code>publicar.py</code> de verdade e grava <code>RELATORIO-PUBLICACAO.md</code> no vault.'],
      ['📁','escolhe outro vault (padrão <code>4-OBSIDIAN-VAULT/</code>).']],

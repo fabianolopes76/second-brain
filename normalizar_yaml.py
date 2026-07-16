@@ -181,6 +181,14 @@ def normalizar(texto: str):
     if tp and tp not in taxonomia.TIPOS and tp != "MOC":
         mud.append(f"⚠ tipo fora do vocabulário: '{tp}' "
                    f"(válidos: {', '.join(taxonomia.TIPOS)})")
+    # `tipo` vazio + tipo_fonte inequívoco (legislacao→Legislação) = derivável
+    # sem inventar nada. Sem `tipo` a nota NÃO TEM ROTA de publicação e some
+    # dos painéis do MOC; onde o mapa admite mais de um, quem decide é o refino.
+    if not tp:
+        derivado = taxonomia.tipo_unico_de(_valor_de("tipo_fonte"))
+        if derivado:
+            novas.append(f"tipo: {derivado}                 # derivado do tipo_fonte — REVISE")
+            mud.append(f"tipo: acrescentado ({derivado} — derivado do tipo_fonte)")
     cf = _valor_de("confiabilidade")
     if cf and cf not in taxonomia.CONFIABILIDADE:
         mud.append(f"⚠ confiabilidade fora do vocabulário: '{cf}' "

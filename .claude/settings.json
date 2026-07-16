@@ -97,7 +97,15 @@
       "Bash(d=\"/mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00\"; ls \"$d\" | head -20; echo \"===\"; command -v jbig2; echo \"jbig2 rc=$?\"; echo \"===\"; python3 -c \" *)",
       "Bash(pdfinfo /mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/20171228-CTM-SLZ_OCR.pdf)",
       "Bash(rm -f /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste/*_OCR.pdf)",
-      "Bash(FORCE_ALL=1 MODE=manter ROOT=/tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste bash aplicar_ocr.sh)"
+      "Bash(FORCE_ALL=1 MODE=manter ROOT=/tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste bash aplicar_ocr.sh)",
+      "Bash(python3 fatiar.py corpus -o /tmp/novo-fatias)",
+      "Bash(python3 normalizar_yaml.py /mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/3-MARKDOWN-LIMPO --dry)",
+      "Bash(python3 publicar.py /mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/3-MARKDOWN-LIMPO /mnt/c/Users/FabianoLopes/OneDrive/Documents/_second-brain-base/_Teste00/4-OBSIDIAN-VAULT --dry)",
+      "Bash(python3 normalizar_yaml.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/3-MARKDOWN-LIMPO)",
+      "Bash(rm -f /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/3-MARKDOWN-LIMPO/*.bak)",
+      "Bash(python3 publicar.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/3-MARKDOWN-LIMPO /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/simul-pub/vault-simulado --dry)",
+      "Bash(~/venvs/acervo/bin/python injetar_paginas.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -o /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/nascimento.md --tipo-fonte legislacao --idioma por)",
+      "Bash(~/venvs/acervo/bin/python injetar_paginas.py /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/ocr-teste2/livro_escaneado_OCR.pdf -o /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/nascimento2.md --tipo-fonte jurisprudencia --idioma por)"
     ]
   }
 }
