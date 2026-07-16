@@ -5,6 +5,15 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.10.2] — 2026-07-16 · Instalador do jbig2enc resiliente a repositório alheio quebrado
+
+### Corrigido
+- `instalar-jbig2enc.sh` abortava no `apt-get update` quando um
+  repositório **de terceiros** da máquina falhava (ex.: PPA que mudou o
+  rótulo e exige aceite manual). O update virou não-fatal, com aviso —
+  as dependências vêm dos repositórios oficiais do Ubuntu, que seguem
+  funcionando mesmo nesse cenário.
+
 ## [3.10.1] — 2026-07-16 · jbig2enc: instalador que funciona no Ubuntu ≤ 22.04
 
 ### Corrigido
