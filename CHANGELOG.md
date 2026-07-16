@@ -5,6 +5,23 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.7.0] — 2026-07-16 · OCR com sinal de vida (nada de "parece congelado")
+
+### Adicionado
+- **Sinal de vida durante o OCR**: o ocrmypdf só mostra barra de progresso
+  em terminal interativo — pelo painel, um livro escaneado grande ficava
+  uma hora em silêncio e parecia travado. Agora, enquanto o OCR roda, o
+  log recebe a cada 60 s uma linha
+  `... OCR em andamento ha XmYYs (sinal de vida ...)` — tanto no painel
+  (seção Execução) quanto no terminal. Intervalo configurável via
+  `BATIMENTO_S`.
+
+### Corrigido
+- `controle.csv` agora nasce **junto do acervo (`$ROOT`)** — onde o painel
+  o procura — e não mais no diretório de onde o script foi chamado
+  (rodar de outra pasta espalhava a planilha pelo diretório corrente,
+  inclusive dentro do repositório).
+
 ## [3.6.1] — 2026-07-16 · OCR: vírgula no nome do arquivo derrubava a detecção de idioma
 
 ### Corrigido

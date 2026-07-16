@@ -55,6 +55,7 @@ Os outros campos (Scripts, venv, Idioma) já vêm preenchidos — só mexa se o 
 
 Fica logo abaixo da Configuração: quando você clica num botão do Pipeline, o trabalho aparece aqui **ao vivo**, linha a linha. Enquanto roda, os demais botões ficam desativados (um trabalho por vez). Ao final aparece `--- fim (código 0) ---` — código 0 é sucesso.
 
+- Linhas com **`... OCR em andamento ha XmYYs (sinal de vida ...)`** aparecem a cada minuto durante o OCR de arquivos grandes: **é o normal, não travou** — um livro escaneado de 800 páginas pode levar mais de uma hora.
 - Linhas com **`AVISO (inofensivo)`** podem ser ignoradas (ex.: metadados que não cabem no formato PDF/A — o arquivo sai perfeito).
 - Linhas com **`FALHOU (rc=N: motivo)`** dizem exatamente o que houve (PDF corrompido, protegido por senha…).
 

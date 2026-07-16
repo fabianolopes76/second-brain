@@ -49,7 +49,10 @@ SUFFIX="${SUFFIX:-_OCR}"
 # a pagina; aproveitamos essa analise para emitir o controle.csv, que alimenta a
 # triagem e o refino no Projeto Claude. Use CSV=0 para nao gerar.
 CSV="${CSV:-1}"
-CSV_FILE="${CSV_FILE:-$PWD/controle.csv}"
+# A planilha mora JUNTO do acervo ($ROOT) — e onde o painel a procura.
+# (Antes o default era $PWD: rodar o script de outra pasta espalhava
+# controle.csv pelo diretorio corrente, inclusive dentro do repo.)
+CSV_FILE="${CSV_FILE:-$ROOT/controle.csv}"
 
 # Deteccao pagina a pagina: pagina precisa de OCR se tem pouco texto de corpo,
 # OU tem imagem grande (escaneada) com pouco texto (so o carimbo).
@@ -164,9 +167,28 @@ rc_motivo() {
 # metadata could not be copied because it is not permitted in PDF/A" e um
 # AVISO BENIGNO (XMP malformado da origem nao cabe no PDF/A; o PDF gerado
 # esta valido e pesquisavel) — mas no log do painel ela parecia um erro.
+#
+# SINAL DE VIDA: o ocrmypdf so mostra barra de progresso em terminal
+# interativo; pelo painel (pipe) um livro escaneado de 800 pgs fica 1h em
+# silencio e parece CONGELADO. Enquanto o OCR roda, um vigia imprime o tempo
+# decorrido a cada BATIMENTO_S segundos (padrao 60).
+BATIMENTO_S="${BATIMENTO_S:-60}"
 ocr_exec() {
+    local t0=$SECONDS rc pid vigia
     ocrmypdf "$@" 2> >(sed \
-      's|.*metadata could not be copied because it is not permitted in PDF/A.*|AVISO (inofensivo): metadados XMP da origem nao cabem no PDF/A — o PDF gerado esta valido e pesquisavel.|' >&2)
+      's|.*metadata could not be copied because it is not permitted in PDF/A.*|AVISO (inofensivo): metadados XMP da origem nao cabem no PDF/A — o PDF gerado esta valido e pesquisavel.|' >&2) &
+    pid=$!
+    (
+        while sleep "$BATIMENTO_S"; do
+            kill -0 "$pid" 2>/dev/null || exit 0
+            echo "    ... OCR em andamento ha $(fmt_dur $((SECONDS - t0))) (sinal de vida — arquivo escaneado grande demora, nao travou)" >&2
+        done
+    ) &
+    vigia=$!
+    wait "$pid"; rc=$?
+    kill "$vigia" 2>/dev/null
+    wait "$vigia" 2>/dev/null
+    return "$rc"
 }
 
 # run_ocr ENTRADA SAIDA : estrategia principal; se a falha for na conversao
