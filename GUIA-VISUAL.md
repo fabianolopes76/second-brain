@@ -157,7 +157,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | `Address already in use` ao iniciar | O painel **já estava aberto** — na v3.8.1+ o inicializador percebe e só abre o navegador. Para reiniciar de verdade (ex.: após atualizar), feche a janela anterior do servidor e inicie de novo. |
 | "Já há uma tarefa em execução" | O painel roda um trabalho por vez. Acompanhe a seção 04 e aguarde o `--- fim ---`. |
 | Etapa cinza (bloqueada) | O texto ao lado diz o que falta (ex.: "faça a triagem"). O trilho é em ordem. |
-| Apareceu `AVISO (inofensivo)` no log | Ignorar — está explicado no próprio log. O arquivo saiu correto. |
+| Apareceu `AVISO (inofensivo)` no log | Ignorar — está explicado no próprio log. O arquivo saiu correto. Exemplos: metadados que não cabem no PDF/A; camada de texto ruim da origem (o OCR a substitui); jbig2enc ausente (PDF sai maior — instale pelo ⚙ Ambiente). |
 | `FALHOU (rc=8: PDF criptografado)` | O PDF tem senha — remova a proteção (imprimir → salvar como PDF resolve) e rode de novo. |
 | `FALHOU (rc=3: dependência ausente…)` | Atualize para a **v3.6.1+** (`git pull`): em versões antigas, **vírgula no nome do PDF** derrubava a detecção de idioma e o OCR falhava fingindo dependência ausente. Se persistir após atualizar, falta mesmo uma ferramenta — abra **⚙ Ambiente** e envie o comando ao suporte. |
 | Nota não aparece no MOC do Obsidian | Etapa **(9) Auditar vault** → abra `RELATORIO-VAULT.md` no próprio vault: ele lista a causa e a correção. |

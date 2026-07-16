@@ -163,10 +163,30 @@ rc_motivo() {
     esac
 }
 
-# ocr_exec ARGS... : ocrmypdf com o stderr anotado. A mensagem "Some input
-# metadata could not be copied because it is not permitted in PDF/A" e um
-# AVISO BENIGNO (XMP malformado da origem nao cabe no PDF/A; o PDF gerado
-# esta valido e pesquisavel) — mas no log do painel ela parecia um erro.
+# anotar_ocr_stderr : anota os avisos BENIGNOS conhecidos do ocrmypdf e
+# suprime a repeticao. Sem isso o painel vira uma parede de susto:
+#   - XMP/PDF-A: metadados da origem nao cabem no padrao (PDF sai valido);
+#   - "Invalid (0 scaling) text matrix": a camada de texto RUIM da ORIGEM
+#     tem matriz degenerada — o Ghostscript reclama 1x POR PAGINA (96 pgs =
+#     96 sustos), mas o redo-ocr descarta essa camada e cria uma nova;
+#   - jbig2enc ausente: paragrafo de 12 linhas do ocrmypdf vira 1 linha
+#     (efeito real: PDF maior, nada quebra; o Ambiente do painel cobra).
+anotar_ocr_stderr() {
+    awk '
+    /metadata could not be copied because it is not permitted in PDF\/A/ {
+        print "AVISO (inofensivo): metadados XMP da origem nao cabem no PDF/A — o PDF gerado esta valido e pesquisavel."; fflush(); next }
+    /Invalid \(0 scaling\) text matrix/ {
+        if (!tm++) { print "AVISO (inofensivo): a camada de texto da ORIGEM tem matriz degenerada (Tm 0) — o Ghostscript reclama, mas o redo-ocr descarta essa camada e cria uma nova. Avisos repetidos suprimidos."; fflush() }
+        next }
+    /Output may be incorrect/ { next }
+    /could not be executed or was not found/ && /jbig2/ {
+        print "AVISO (inofensivo): jbig2enc nao instalado — o PDF sai valido, porem MAIOR (sem compressao JBIG2). Para instalar: sudo apt install -y jbig2enc"; fflush()
+        jb=1; jbn=0; next }
+    jb { jbn++; if (/installing the RPM for jbig2/ || jbn > 14) jb=0; next }
+    { print; fflush() }'
+}
+
+# ocr_exec ARGS... : ocrmypdf com o stderr anotado (ver anotar_ocr_stderr).
 #
 # SINAL DE VIDA: o ocrmypdf so mostra barra de progresso em terminal
 # interativo; pelo painel (pipe) um livro escaneado de 800 pgs fica 1h em
@@ -175,8 +195,7 @@ rc_motivo() {
 BATIMENTO_S="${BATIMENTO_S:-60}"
 ocr_exec() {
     local t0=$SECONDS rc pid vigia
-    ocrmypdf "$@" 2> >(sed \
-      's|.*metadata could not be copied because it is not permitted in PDF/A.*|AVISO (inofensivo): metadados XMP da origem nao cabem no PDF/A — o PDF gerado esta valido e pesquisavel.|' >&2) &
+    ocrmypdf "$@" 2> >(anotar_ocr_stderr >&2) &
     pid=$!
     (
         while sleep "$BATIMENTO_S"; do

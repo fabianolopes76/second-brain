@@ -148,6 +148,8 @@ def diagnostico():
     check("tesseract (por)", "tesseract", "sudo apt install -y tesseract-ocr-por")
     check("poppler (pdftotext)", "pdftotext", "sudo apt install -y poppler-utils")
     check("unpaper (flag --clean)", "unpaper", "sudo apt install -y unpaper")
+    # opcional, mas o padrao OPTIMIZE=3 o recomenda: sem ele o PDF sai maior
+    check("jbig2enc (compressão do PDF)", "jbig2", "sudo apt install -y jbig2enc")
 
     # Idiomas do Tesseract (acervo multilíngue: pt/en/de/fr/it/es)
     try:

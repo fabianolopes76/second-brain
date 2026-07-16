@@ -542,6 +542,8 @@ Sempre que um erro novo aparecer e for resolvido, registre aqui. Vale mais que q
 |---|---|---|---|---|
 | 2026-07 | Docling | `ImportError: cannot import name 'Inf' from 'numpy'` | scipy do `apt` (antigo) × numpy 2.x do `pip --user` | venv isolado (A.2) |
 | 2026-07 | OCRmyPDF | "Some input metadata could not be copied because it is not permitted in PDF/A" no log, parecendo erro | **Aviso benigno**: metadados XMP malformados da origem não cabem no padrão PDF/A; o PDF gerado está válido e pesquisável. O log do painel misturava stderr sem classificar | `aplicar_ocr.sh` anota a mensagem como `AVISO (inofensivo)`; falha real agora sai com `rc` + motivo (`rc_motivo`); se só a conversão PDF/A falhar, o script tenta `--output-type pdf` para aquele arquivo |
+| 2026-07 | Ghostscript (via OCRmyPDF) | Parede de `**** Error: Invalid (0 scaling) text matrix for Tm **** Output may be incorrect.` ao OCRizar Diário Oficial/duas colunas (1 aviso POR PÁGINA) | **Aviso benigno**: a camada de texto RUIM **da origem** usa matriz de texto degenerada (truque de texto invisível de OCRs antigos); o Ghostscript reclama ao ler, mas o `--redo-ocr` **descarta essa camada** e cria uma nova. OCR terminou `ok`, texto íntegro | `anotar_ocr_stderr` no `aplicar_ocr.sh`: anota como `AVISO (inofensivo)` **uma única vez** e suprime as repetições |
+| 2026-07 | OCRmyPDF | Parágrafo de 12 linhas "The program 'jbig2' could not be executed…" em todo OCR | jbig2enc é compressor **opcional** recomendado pelo `--optimize 3` (nosso padrão); sem ele o PDF sai válido, porém maior | Instalar `jbig2enc` (agora cobrado pelo ⚙ Ambiente do painel); log colapsa o parágrafo em 1 linha `AVISO (inofensivo)` com o comando |
 | | | | | |
 
 

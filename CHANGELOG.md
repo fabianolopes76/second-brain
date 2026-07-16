@@ -5,6 +5,25 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.9.0] — 2026-07-16 · OCR de documento de duas colunas: log sem paredes de susto
+
+Incidente investigado (Diário Oficial de 96 pgs, duas colunas, elementos
+gráficos): o OCR **terminou ok e o texto saiu íntegro** — mas o log
+assustava com três famílias de mensagens do ocrmypdf/Ghostscript.
+
+### Adicionado
+- **`anotar_ocr_stderr` no `aplicar_ocr.sh`**: os avisos benignos
+  conhecidos viram `AVISO (inofensivo)` com explicação e **sem repetição**:
+  `Invalid (0 scaling) text matrix` (camada de texto degenerada DA ORIGEM,
+  que o `--redo-ocr` descarta — saía 1× por página) é anotado uma única
+  vez; o parágrafo de 12 linhas do jbig2 vira 1 linha com o comando de
+  instalação; o aviso XMP/PDF-A segue anotado como antes.
+- **`jbig2enc` no diagnóstico do ⚙ Ambiente**: compressor opcional que o
+  `--optimize 3` (padrão) recomenda — sem ele o PDF sai válido, porém
+  maior. O semáforo agora cobra, com o `apt install` pronto para copiar.
+- Incidente registrado no **Apêndice A.7 do WORKFLOW** (Ghostscript Tm 0
+  e jbig2), como o runbook pede.
+
 ## [3.8.1] — 2026-07-16 · Inicializador reaproveita o painel já aberto
 
 ### Corrigido
