@@ -32,7 +32,7 @@ echo ">> 1/4 dependencias de compilacao (sudo)"
 # de que precisamos vem dos repositorios oficiais do Ubuntu, que seguem
 # atualizados mesmo quando o update sai com erro por causa de outro repo.
 sudo apt-get update || echo "   (AVISO: um repositorio de terceiros falhou no update — seguindo assim mesmo)"
-sudo apt-get install -y build-essential automake libtool libleptonica-dev zlib1g-dev git
+sudo apt-get install -y build-essential automake libtool pkg-config libleptonica-dev zlib1g-dev git
 
 echo ">> 2/4 baixando github.com/agl/jbig2enc"
 tmp="$(mktemp -d)"

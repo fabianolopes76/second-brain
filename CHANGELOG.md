@@ -5,6 +5,13 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.10.3] — 2026-07-16 · Instalador do jbig2enc: faltava o pkg-config
+
+### Corrigido
+- O `./configure` do jbig2enc parava com "pkg-config macro not found":
+  `pkg-config` entrou na lista de dependências de compilação do
+  `instalar-jbig2enc.sh`.
+
 ## [3.10.2] — 2026-07-16 · Instalador do jbig2enc resiliente a repositório alheio quebrado
 
 ### Corrigido
