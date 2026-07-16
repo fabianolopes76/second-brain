@@ -27,12 +27,13 @@ O painel tem 5 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 ┌──────────────────────────────────────────────────────────────┐
 │  Acervo · Painel de Controle                    ● pronto     │
 ├──────────────────────────────────────────────────────────────┤
-│  01 · Configuração   ← onde estão seus PDFs (primeira vez)   │
-│  02 · Ambiente       ← semáforo das ferramentas instaladas   │
+│  01 · Configuração   ← seus PDFs + botão [⚙ Ambiente]        │
+│  02 · Execução       ← o "vidro da máquina": log ao vivo     │
 │  03 · Pipeline       ← O TRILHO: etapas 1 a 10, em ordem     │
-│  04 · Execução       ← o "vidro da máquina": log ao vivo     │
-│  05 · Triagem        ← a tabela com o raio-X de cada PDF     │
+│  04 · Triagem        ← a tabela com o raio-X de cada PDF     │
 └──────────────────────────────────────────────────────────────┘
+   (⚙ Ambiente abre um painel lateral com o semáforo das
+    ferramentas — verde: tudo pronto; vermelho: precisa de ação)
 ```
 
 ### 01 · Configuração — diga onde estão os PDFs
@@ -41,11 +42,21 @@ O painel tem 5 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 2. Navegue pelo seletor: ele mostra os discos do Windows (`💾 Windows C:`), suas pastas (Documents, Downloads…) e as do Linux. **Cada pasta mostra quantos PDFs tem** — isso ajuda a achar o acervo.
 3. Selecione a pasta e clique **Definir**.
 
+> **Clicou em "Definir" sem escolher a pasta?** Aparece uma advertência em vermelho logo abaixo do campo — ela some sozinha assim que você escolhe (ou digita) a pasta.
+
 Os outros campos (Scripts, venv, Idioma) já vêm preenchidos — só mexa se o suporte orientar. O idioma padrão é **auto**: cada obra é detectada e OCRizada na língua certa (pt/en/de/fr/it/es).
 
-### 02 · Ambiente — o semáforo
+**O botão ⚙ Ambiente** (na mesma linha do Definir) é o semáforo das ferramentas:
 
-Lista as ferramentas necessárias com ✓ (ok) ou ✗ (faltando). Se aparecer algum ✗, a própria linha mostra o comando de instalação — copie e envie ao suporte. Com tudo ✓, siga em frente.
+- **Verde** (`⚙ Ambiente ✓`) — tudo instalado, siga em frente.
+- **Vermelho** (`⚙ Ambiente — N pendências`) — falta algo. Clique: um painel desliza da direita listando cada item com ✓/✗ e **um comando único pronto para copiar** e enviar ao suporte. Feche no ✕ ou com a tecla Esc.
+
+### 02 · Execução — o vidro da máquina
+
+Fica logo abaixo da Configuração: quando você clica num botão do Pipeline, o trabalho aparece aqui **ao vivo**, linha a linha. Enquanto roda, os demais botões ficam desativados (um trabalho por vez). Ao final aparece `--- fim (código 0) ---` — código 0 é sucesso.
+
+- Linhas com **`AVISO (inofensivo)`** podem ser ignoradas (ex.: metadados que não cabem no formato PDF/A — o arquivo sai perfeito).
+- Linhas com **`FALHOU (rc=N: motivo)`** dizem exatamente o que houve (PDF corrompido, protegido por senha…).
 
 ### 03 · Pipeline — o trilho de 10 etapas
 
@@ -80,7 +91,7 @@ MANUTENÇÃO
 
 **O que cada etapa faz, em uma frase:**
 
-1. **Triagem** — analisa cada PDF (tipo provável, idioma, precisa de OCR?) e monta a tabela da seção 05. *Não altera nenhum arquivo.*
+1. **Triagem** — analisa cada PDF (tipo provável, idioma, precisa de OCR?) e monta a tabela da seção 04. *Não altera nenhum arquivo.*
 2. **OCR** — aplica reconhecimento de texto **só** nos PDFs escaneados, preservando o original (cria uma cópia `_OCR`).
 3. **Paginação** — converte para texto **guardando o número de cada página** (`{{p.45}}`). Sem isso, não há citação ABNT. Dá para processar um arquivo avulso pelo botão 📁, informando o *offset* se a página impressa não bater.
 4. **Limpar** — conserta o que o OCR quebrou (palavras hifenizadas, cabeçalhos repetidos). Mecânico, de graça.
@@ -91,14 +102,7 @@ MANUTENÇÃO
 9. **Auditar vault** — verifica as *ligações* do cérebro: fatia órfã, link quebrado, nota que "sumiu" dos painéis por erro de preenchimento.
 10. **Radar** — cruza as novidades (leis alteradas, novos julgados — coletadas pelo assistente de IA na pasta `Radar/`) com as notas do seu acervo que as citam, e monta a **fila de revisão**. "Sinalizar A-conferir" marca as notas afetadas para você revisar — **a decisão de reclassificar é sempre sua**.
 
-### 04 · Execução — o vidro da máquina
-
-Quando você clica num botão, o trabalho aparece aqui **ao vivo**, linha a linha. Enquanto roda, os demais botões ficam desativados (um trabalho por vez). Ao final aparece `--- fim (código 0) ---` — código 0 é sucesso.
-
-- Linhas com **`AVISO (inofensivo)`** podem ser ignoradas (ex.: metadados que não cabem no formato PDF/A — o arquivo sai perfeito).
-- Linhas com **`FALHOU (rc=N: motivo)`** dizem exatamente o que houve (PDF corrompido, protegido por senha…).
-
-### 05 · Triagem — o raio-X dos seus PDFs
+### 04 · Triagem — o raio-X dos seus PDFs
 
 Depois da etapa 1, esta tabela mostra, para cada arquivo: idioma detectado, se precisa de OCR, a rota de conversão e o **tipo provável** (`legislacao`, `livro`, `jurisprudencia`…).
 
@@ -116,7 +120,7 @@ Um lote novo de PDFs, do download ao Obsidian:
 
 1. Copie os PDFs para a pasta do acervo (no Windows Explorer mesmo).
 2. Duplo-clique em **Iniciar-Acervo.bat**.
-3. **(1) Analisar** → confira a tabela da seção 05.
+3. **(1) Analisar** → confira a tabela da seção 04.
 4. **(2) Aplicar OCR** → espere o log terminar.
 5. **(3) Converter** → **(4) Limpar** → **(5) Fatiar**.
 6. **(6) Validar** → **(7) Auditar** → leia as pendências (o refino fino — autor, resumo — é feito no Projeto Claude, como descreve o WORKFLOW).

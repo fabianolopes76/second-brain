@@ -5,6 +5,21 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.6.0] — 2026-07-16 · Layout do painel: Ambiente em slideover
+
+### Alterado
+- **Ambiente virou um painel lateral (slideover)**, aberto pelo botão
+  `⚙ Ambiente` na Configuração — o botão é o semáforo: **verde** quando
+  todas as dependências estão prontas, **vermelho** com a contagem de
+  pendências quando precisa de ação (fecha no ✕ ou com Esc).
+- **Execução subiu para logo abaixo da Configuração** (novo fluxo visual:
+  01 Configuração · 02 Execução · 03 Pipeline · 04 Triagem).
+
+### Adicionado
+- **Advertência sob o campo "Pasta do acervo"**: clicar em Definir sem
+  escolher a pasta mostra o aviso em vermelho abaixo do input; ele some
+  assim que uma pasta é escolhida no navegador ou digitada.
+
 ## [3.5.2] — 2026-07-16 · Correção do inicializador no WSL2
 
 ### Corrigido

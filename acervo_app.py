@@ -941,6 +941,28 @@ button:disabled{opacity:.4;cursor:not-allowed}
 
 /* ---- diagnóstico ---- */
 .diag{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+/* botão Ambiente (status) · alerta · slideover */
+.bamb{height:38px;padding:0 14px;border-radius:8px;border:1.5px solid var(--line);
+  background:var(--surf);cursor:pointer;font-weight:600;white-space:nowrap;font-size:13px}
+.bamb.ok{border-color:var(--ok);color:var(--ok)}
+.bamb.falta{border-color:var(--err);color:var(--err)}
+.alerta{margin-top:6px;font-size:12.5px;color:var(--err);font-weight:600}
+.sov-bg{position:fixed;inset:0;background:rgba(27,42,65,.35);opacity:0;
+  pointer-events:none;transition:opacity .25s;z-index:60}
+.sov-bg.on{opacity:1;pointer-events:auto}
+.sover{position:fixed;top:0;right:0;height:100%;width:min(480px,92vw);
+  background:var(--surf);box-shadow:-12px 0 40px rgba(0,0,0,.18);z-index:61;
+  transform:translateX(100%);transition:transform .28s ease;
+  display:flex;flex-direction:column}
+.sover.on{transform:translateX(0)}
+.sov-head{display:flex;align-items:center;gap:10px;padding:16px 18px;
+  border-bottom:1px solid var(--line)}
+.sov-head h2{font-size:16px;margin:0;flex:1}
+.sov-head .fechar{border:1px solid var(--line);background:var(--surf2);
+  border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px}
+.sov-body{padding:16px 18px;overflow-y:auto}
+.sov-dica{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+.sover .diag{grid-template-columns:1fr}
 .d{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:5px 8px;border-radius:6px}
 .d:hover{background:var(--surf2)}
 .d .i{font-weight:700;width:14px;flex-shrink:0}
@@ -1057,10 +1079,14 @@ tr:hover td{background:var(--surf2)}
     <div class="row">
       <div class="campo">
         <label>Pasta do acervo — onde estão os PDFs</label>
-        <input type="text" id="root" placeholder="clique em Procurar…">
+        <input type="text" id="root" placeholder="clique em Procurar…"
+               oninput="if(this.value.trim()) rootAviso.hidden = true">
+        <div class="alerta" id="rootAviso" hidden>⚠ Defina primeiro a pasta do acervo — clique em 📁 Procurar…</div>
       </div>
       <button class="bnav" style="height:38px" onclick="abrirNav('root','dir')">📁 Procurar…</button>
       <button class="primary" style="height:38px" onclick="salvar()">Definir</button>
+      <button class="bamb" id="btnAmb" onclick="abrirAmbiente()"
+              title="dependências do sistema — verde: tudo pronto; vermelho: precisa de ação">⚙ Ambiente</button>
     </div>
     <div class="eco" id="rootWsl"></div>
 
@@ -1097,14 +1123,10 @@ tr:hover td{background:var(--surf2)}
   </div>
 </section>
 
-<!-- 02 DEPENDÊNCIAS -->
+<!-- 02 EXECUÇÃO -->
 <section>
-  <div class="head"><span class="n">02</span><h2>Ambiente</h2>
-    <p>pendências viram um comando único, pronto para colar</p></div>
-  <div class="card">
-    <div id="pend"></div>
-    <div class="diag" id="diag"></div>
-  </div>
+  <div class="head"><span class="n">02</span><h2>Execução</h2><p id="jobName">nenhuma tarefa</p></div>
+  <pre id="log">Aguardando…</pre>
 </section>
 
 <!-- 03 PIPELINE -->
@@ -1301,15 +1323,9 @@ tr:hover td{background:var(--surf2)}
   </div>
 </section>
 
-<!-- 04 LOG -->
+<!-- 04 TRIAGEM -->
 <section>
-  <div class="head"><span class="n">04</span><h2>Execução</h2><p id="jobName">nenhuma tarefa</p></div>
-  <pre id="log">Aguardando…</pre>
-</section>
-
-<!-- 05 TRIAGEM -->
-<section>
-  <div class="head"><span class="n">05</span><h2>Triagem</h2>
+  <div class="head"><span class="n">04</span><h2>Triagem</h2>
     <p>o tipo é um palpite automático — <b>revise</b></p></div>
   <div class="tw"><table>
     <thead><tr><th>Arquivo</th><th>Idioma</th><th>Pgs</th><th>Texto?</th><th>OCR</th>
@@ -1318,6 +1334,18 @@ tr:hover td{background:var(--surf2)}
   </table></div>
   <div class="stat" id="stat"></div>
 </section>
+
+<!-- SLIDEOVER · AMBIENTE -->
+<div class="sov-bg" id="sovBg" onclick="fecharAmbiente()"></div>
+<aside class="sover" id="sov" aria-label="Ambiente — dependências">
+  <div class="sov-head"><h2>⚙ Ambiente</h2>
+    <button class="fechar" onclick="fecharAmbiente()" title="fechar (Esc)">✕</button></div>
+  <div class="sov-body">
+    <p class="sov-dica">pendências viram um comando único, pronto para colar</p>
+    <div id="pend"></div>
+    <div class="diag" id="diag"></div>
+  </div>
+</aside>
 
 <div class="nota">
 <b>Sigilo.</b> Tudo roda na sua máquina (WSL2) — nada vai para a internet.
@@ -1500,6 +1528,7 @@ function navSelecionar(){
     renderFila();
   } else {
     document.getElementById(navAlvo).value = navAtual;
+    if(navAlvo === 'root') rootAviso.hidden = true;
     if(navAlvo !== 'audp'){
       const c = {}; c[navAlvo] = navAtual; salvar(c);   // só o campo escolhido
     }
@@ -1553,6 +1582,14 @@ function fb(txt, cb){
 
 /* ---------- ações ---------- */
 async function salvar(campos){
+  // "Definir" antes de escolher a pasta → advertência sob o input (some
+  // assim que uma pasta é escolhida/digitada).
+  if(!campos && !root.value.trim()){
+    rootAviso.hidden = false;
+    root.focus();
+    return;
+  }
+  if(root.value.trim()) rootAviso.hidden = true;
   // Envia só os campos preenchidos. Antes mandava os três juntos: se o venv
   // estivesse errado, o POST falhava e a PASTA DO ACERVO nunca era salva.
   const corpo = campos || {};
@@ -1570,6 +1607,9 @@ async function salvar(campos){
   estado();
 }
 function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acervo'}); }
+function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
+function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
+document.addEventListener('keydown', e => { if(e.key === 'Escape') fecharAmbiente(); });
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
@@ -1677,6 +1717,10 @@ async function estado(){
     return `<div class="d ${d.ok?'ok':'no'}"><span class="i">${d.ok?'✓':'✗'}</span>
       <div style="flex:1;min-width:0"><b>${esc(d.nome)}</b>${bloco}</div></div>`;
   }).join('');
+
+  const falta = s.diag.filter(d=>!d.ok).length;
+  btnAmb.className = 'bamb ' + (falta ? 'falta' : 'ok');
+  btnAmb.textContent = falta ? `⚙ Ambiente — ${falta} pendência${falta>1?'s':''}` : '⚙ Ambiente ✓';
 
   const cmds = s.diag.filter(d=>!d.ok && d.dica && ehComando(d.dica)).map(d=>d.dica);
   if(cmds.length){
