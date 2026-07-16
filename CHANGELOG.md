@@ -5,6 +5,17 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.5.2] — 2026-07-16 · Correção do inicializador no WSL2
+
+### Corrigido
+- `iniciar-acervo.sh`: no WSL2, o `xdg-open` era escolhido primeiro e
+  procurava navegador DENTRO do Linux — despejava uma cascata de
+  "not found" e não abria nada. Agora o WSL é detectado e o navegador do
+  **Windows** é aberto (wslview → powershell.exe → explorer.exe, inclusive
+  por caminho absoluto quando o PATH de interop não está disponível);
+  em último caso, imprime a URL para abrir manualmente. O servidor nunca
+  foi afetado — o defeito era só na abertura automática do navegador.
+
 ## [3.5.1] — 2026-07-15 · Higiene interna (DRY nas bordas)
 
 ### Adicionado

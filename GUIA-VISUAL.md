@@ -143,6 +143,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | Sintoma | O que fazer |
 |---|---|
 | O navegador abriu mas a página não carrega | Espere 5 s e recarregue (F5). Confira se a janela preta do servidor está aberta. |
+| Mensagens `x-www-browser: not found` … ao iniciar (WSL2) | Versão antiga do inicializador — atualize para a v3.5.2+ (`git pull`). O servidor funcionava; só a abertura automática falhava. |
 | Fechei a janela preta sem querer | O painel cai. Duplo-clique de novo no `Iniciar-Acervo.bat`. |
 | "Já há uma tarefa em execução" | O painel roda um trabalho por vez. Acompanhe a seção 04 e aguarde o `--- fim ---`. |
 | Etapa cinza (bloqueada) | O texto ao lado diz o que falta (ex.: "faça a triagem"). O trilho é em ordem. |

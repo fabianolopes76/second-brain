@@ -63,7 +63,10 @@
       "Bash(bash -n iniciar-acervo.sh)",
       "Bash(git tag *)",
       "Bash(awk -F: '{s+=$2} END {print \"funções totais:\", s}')",
-      "Bash(awk -F: '{s+=$2} END {print \"com anotação de tipo em parâmetro:\", s}')"
+      "Bash(awk -F: '{s+=$2} END {print \"com anotação de tipo em parâmetro:\", s}')",
+      "Bash(bash -c ' *)",
+      "Bash(timeout 6 ./iniciar-acervo.sh)",
+      "Bash(curl -s -o /dev/null -w \"painel responde: HTTP %{http_code}\\\\n\" http://localhost:8765)"
     ]
   }
 }
