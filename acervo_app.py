@@ -2156,6 +2156,7 @@ tr:hover td{background:var(--surf2)}
           </div>
         </div>
         <div class="extra">
+          <div class="dica" id="pubGuia" style="font-size:12.5px;margin:0 0 8px"></div>
           <input type="text" id="vaultp" placeholder="(padrão: 4-OBSIDIAN-VAULT)">
           <div class="dica"><b>Simule primeiro.</b> Publicar é COPIAR — o 3-MARKDOWN-LIMPO segue como estágio de trabalho. Se uma nota do vault foi editada à mão (curadoria), ela <b>não</b> é sobrescrita. Relatório: <b>RELATORIO-PUBLICACAO.md</b>.</div>
         </div>
@@ -3040,19 +3041,46 @@ function atualizarTrilho(p, temRoot){
     marcar('ef','ativa', partes.join(' · '),'pend');
   }
   else                  marcar('ef','feito', (fi.prontas||0)+' prontas','ok');
-  // 7(dot) publicar — prontidão REAL: auditoria da camada-1 + staleness.
-  // "N arquivos no limpo" mentia: reprovada não publica, fatia fica retida.
+  // 7(dot) publicar — UMA mensagem por vez, na ordem que importa:
+  // 1º) material desatualizado (refatie — os números de qualidade da
+  //     fotografia velha são ruído e NÃO são exibidos junto);
+  // 2º) material em dia mas com reprovadas (corrija na mesa ✎);
+  // 3º) tudo pronto (simule e publique) / publicado.
+  // O badge fica CURTO; a explicação + botão da ação vão para o corpo
+  // do card (#pubGuia), visível enquanto a etapa está ativa.
   const pb = p.pub || {};
-  const pendPub = (pb.reprovadas||0) + (pb.desatualizadas||0) + (pb.fora_do_limpo||0);
-  const pp = [];
-  if(pb.prontas)        pp.push(pb.prontas+' obra(s) prontas ✓');
-  if(pb.reprovadas)     pp.push(pb.reprovadas+' reprovadas → ✎ fichas');
-  if(pb.desatualizadas) pp.push(pb.desatualizadas+' desatualizadas → refatie (5)');
-  if(pb.fora_do_limpo)  pp.push(pb.fora_do_limpo+' fora do limpo → fatie (5)');
-  const txtPub = pp.join(' · ') || (p.limpo_md + ' no limpo');
-  if(!p.limpo_md)               marcar('e8','bloq','prepare 3-MARKDOWN-LIMPO','');
-  else if(p.publicado && !pendPub) marcar('e8','feito', txtPub+dt('publicado'),'ok');
-  else                          marcar('e8','ativa', txtPub, pendPub?'pend':'ok');
+  const desat = (pb.desatualizadas||0) + (pb.fora_do_limpo||0);
+  const guia = document.getElementById('pubGuia');
+  if(!p.limpo_md){
+    marcar('e8','bloq','prepare 3-MARKDOWN-LIMPO (etapa 5 — Fatiar)','');
+    if(guia) guia.innerHTML = '';
+  }
+  else if(desat){
+    marcar('e8','ativa', '⚠ refatie antes — '+desat+' obra(s)', 'pend');
+    if(guia) guia.innerHTML =
+      `<b style="color:var(--warn)">Suas correções de ficha ainda não chegaram aqui.</b> `+
+      `Você corrigiu no <b>2-MARKDOWN-BRUTO</b>, mas o Publicar lê o <b>3-MARKDOWN-LIMPO</b> — `+
+      `que está com a versão antiga de <b>${desat} obra(s)</b>. `+
+      `<button data-a onclick="acao('fatiar',{palavras:+palavras.value})" style="margin:4px 0">↻ Refatiar agora</button> `+
+      `<span style="opacity:.8">(etapa 5 — propaga as fichas, copia os pequenos e volta aqui em dia)</span>`;
+  }
+  else if(pb.reprovadas){
+    marcar('e8','ativa', pb.prontas+' prontas ✓ · '+pb.reprovadas+' reprovadas', 'pend');
+    if(guia) guia.innerHTML =
+      `<b style="color:var(--err)">${pb.reprovadas} obra(s) reprovadas não entrarão</b> — ficha incompleta. `+
+      `<button onclick="abrirFichas()" style="margin:4px 0">📋 Corrigir fichas</button> `+
+      `<span style="opacity:.8">As ${pb.prontas} prontas podem ser publicadas desde já: reprovada fica retida, nada é estragado.</span>`;
+  }
+  else if(p.publicado){
+    marcar('e8','feito', pb.prontas+' obra(s) publicáveis, em dia'+dt('publicado'),'ok');
+    if(guia) guia.innerHTML = '';
+  }
+  else {
+    marcar('e8','ativa', pb.prontas+' obra(s) prontas ✓ — simule e publique', 'ok');
+    if(guia) guia.innerHTML =
+      `<b style="color:var(--ok)">✓ Tudo em dia e sem reprovadas.</b> `+
+      `<b>Simular</b> mostra o plano (nada é gravado); <b>Publicar</b> copia ao vault.`;
+  }
   // 9 auditar vault (grafo)
   if(!p.vault)              marcar('e9','bloq','publique o vault antes','');
   else if(p.vault_auditado) marcar('e9','feito','grafo auditado'+dt('vault_auditado'),'ok');

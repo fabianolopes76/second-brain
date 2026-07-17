@@ -5,6 +5,21 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.18.0] — 2026-07-17 · Card Publicar fala uma coisa de cada vez
+
+### Alterado
+- **O card Publicar deixou de despejar 4 contadores com jargão** numa
+  linha ("1 prontas · 10 reprovadas · 11 desatualizadas · 2 fora do
+  limpo") e passou a falar **uma coisa por vez, na ordem de prioridade,
+  com o botão da ação no próprio card**:
+  1. ⚠ *"refatie antes — N obra(s)"* + explicação ("você corrigiu no
+     BRUTO; o Publicar lê o LIMPO, que está com a versão antiga") +
+     botão **↻ Refatiar agora** — e os números de qualidade da
+     fotografia velha **não são exibidos** (eram ruído);
+  2. ✗ *"X prontas · Y reprovadas"* + botão **📋 Corrigir fichas** +
+     nota de que publicar as prontas é seguro (reprovada fica retida);
+  3. ✓ *"tudo em dia — simule e publique"* / publicado.
+
 ## [3.17.3] — 2026-07-17 · Salvar ficha sem erros volta à lista
 
 ### Alterado
