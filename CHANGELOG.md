@@ -5,6 +5,15 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.17.3] — 2026-07-17 · Salvar ficha sem erros volta à lista
+
+### Alterado
+- **"Salvar e revalidar" com a ficha OK fecha a edição e volta à lista
+  de fichas** (já reagrupada), com a confirmação no cabeçalho
+  ("✓ arquivo salvo — PARCIAL"). Se restarem erros de ficha, permanece
+  na edição com os campos destacados — como pedido: fecha, salvo se
+  houver erros.
+
 ## [3.17.2] — 2026-07-17 · Reparador de JSON v2 + rejeição com diagnóstico
 
 ### Corrigido

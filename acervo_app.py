@@ -2765,9 +2765,21 @@ async function salvarFicha(){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({arquivo:FICHA_ARQ, campos})})).json();
   if(!r.ok){ fsovErros.innerHTML = '<b style="color:var(--err)">✗</b> ' + esc(r.msg||'erro'); return; }
-  /* feedback em DOIS blocos: o que é da ficha × o que é de outra etapa */
   const falta = (r.faltam_campos||[]);
   const fichaOk = !falta.length && !(r.erros_ficha||[]).length;
+  /* Ficha SEM erros → fecha a edição e volta à LISTA (já reagrupada),
+     com a confirmação no cabeçalho. Com erros, permanece na edição
+     mostrando os destaques do que falta. */
+  if(fichaOk){
+    fichaEdicao.hidden = true; fichaLista.hidden = false; fVoltar.hidden = true;
+    fsovTit.textContent = '📋 Fichas — o que merece atenção';
+    const nomeSalvo = FICHA_ARQ; FICHA_ARQ = '';
+    await carregarFichas();
+    fichasInfo.innerHTML += ` &nbsp;·&nbsp; <span style="color:var(--ok)">✓ ${esc(nomeSalvo)} salvo — ${esc(r.nota)}</span>`;
+    estado();
+    return;
+  }
+  /* feedback em DOIS blocos: o que é da ficha × o que é de outra etapa */
   let html = `<div class="fb-bloco"><b class="t" style="color:${fichaOk?'var(--ok)':'var(--err)'}">Ficha</b>`;
   if(fichaOk){
     html += `<span style="color:var(--ok)">✓ completa — nada bloqueia por parte da ficha</span>`;
