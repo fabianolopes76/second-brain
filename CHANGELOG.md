@@ -5,6 +5,20 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.14.3] — 2026-07-17 · Seletores da ficha não descartam mais a escolha
+
+### Corrigido
+- **Escolha feita num seletor era descartada no salvar**: ao trocar o
+  `tipo_fonte`, o formulário se redesenha (para abrir os campos do tipo)
+  e a escolha do usuário virava o rótulo "(manter: livro)" — que era a
+  opção de **valor vazio**; vazio não grava. Resultado: os campos de
+  texto eram salvos, mas tipo_fonte/tipo/area/status/confiabilidade
+  ficavam de fora e a ficha continuava REPROVADA com os valores na tela.
+  Os seletores agora carregam o **valor real selecionado** (persistem a
+  redesenhos e são gravados); valor fora do vocabulário aparece marcado
+  "(fora do vocabulário)" em vez de ser trocado em silêncio pelo
+  primeiro da lista.
+
 ## [3.14.2] — 2026-07-17 · Card ✎ mostra as prontas — o progresso fica visível
 
 ### Corrigido

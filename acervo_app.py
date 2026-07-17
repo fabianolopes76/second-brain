@@ -2297,10 +2297,16 @@ function campoFicha(c){
       <textarea id="f_resumo" rows="3" style="width:100%;resize:vertical" placeholder="(em branco = não mexe)">${esc(v)}</textarea></div>`;
   }
   if(F_SEL[c]){
+    /* O seletor carrega o VALOR REAL selecionado — nada de "(manter: X)"
+       com value vazio: quando o formulário se redesenhava (troca de
+       tipo_fonte), a escolha do usuário virava o rótulo da opção vazia
+       e era DESCARTADA no salvar (ficha REPROVADA com o valor na tela). */
     const ops = VOCAB[F_SEL[c]];
+    const foraVocab = v && !ops.includes(v);
     return `<div class="${cls}"><label>${esc(c)}${ast}</label><select id="f_${esc(c)}">
-      <option value="">${v ? '(manter: '+esc(v)+')' : '(vazio)'}</option>
-      ${ops.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select></div>`;
+      ${v ? '' : '<option value="" selected>(vazio — escolha para gravar)</option>'}
+      ${foraVocab ? `<option value="${esc(v)}" selected>${esc(v)} (fora do vocabulário)</option>` : ''}
+      ${ops.map(o=>`<option value="${esc(o)}"${o===v?' selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
   }
   const extra = VOCAB.listas.includes(c) ? ' · vários? separe com ;' : '';
   return `<div class="${cls}"><label>${esc(c)}${ast}${falta?' — <b>preencha</b>':''}</label>
