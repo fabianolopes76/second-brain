@@ -2386,8 +2386,12 @@ async function salvarFicha(){
   fsovErros.innerHTML = html;
   F_CAMPOS = await (await fetch('/api/ficha?arq='+encodeURIComponent(FICHA_ARQ))).json();
   renderFicha();
+  estado();   // card ✎ do trilho reflete o salvamento NA HORA, sem esperar o poll
 }
-function fecharFicha(){ fsovBg.classList.remove('on'); fsov.classList.remove('on'); }
+function fecharFicha(){
+  fsovBg.classList.remove('on'); fsov.classList.remove('on');
+  estado();   // contadores do card ✎ atualizados ao sair da mesa
+}
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',

@@ -5,6 +5,16 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.14.1] — 2026-07-17 · Card ✎ atualiza NA HORA ao salvar/fechar a ficha
+
+### Corrigido
+- **Salvar uma ficha atualiza o card ✎ imediatamente**: os contadores
+  ("X corrigir · Y conferir") eram repintados só no próximo poll (até
+  1,5 s) — agora o salvar e o fechar da mesa disparam o refresh na hora.
+  (O servidor já invalidava o cache corretamente; a espera era do
+  cliente. Se o card não muda NUNCA ao salvar, o painel/aba ainda roda
+  versão < 3.14 — reinicie o servidor e recarregue com Ctrl+F5.)
+
 ## [3.14.0] — 2026-07-17 · Ficha revisada VIRA revisada · referência ABNT automática
 
 Incidente: o usuário revisou a ficha do CTM-SLZ e ela continuou em
