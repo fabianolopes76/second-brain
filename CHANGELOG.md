@@ -5,6 +5,35 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.14.0] — 2026-07-17 · Ficha revisada VIRA revisada · referência ABNT automática
+
+Incidente: o usuário revisou a ficha do CTM-SLZ e ela continuou em
+"⚠ Conferir" com as marcas de automação; e a referência ABNT não era
+gerada mesmo com a ficha completa.
+
+### Corrigido
+- **Salvar = revisar**: salvar a ficha remove as marcas
+  `# palpite da triagem — REVISE` / `# derivado do tipo_fonte — REVISE`
+  do arquivo — antes ninguém as removia (o seletor em "manter" não
+  regrava a linha) e a ficha ficava presa em "Conferir" para sempre.
+- **Avisos genéricos não seguram mais a ficha**: "hifenização quebrada"
+  e afins são do TEXTO, não da ficha — prendiam obras OCRizadas
+  eternamente fora de "✓ Prontas". Grupo agora: corrigir (erro de
+  ficha) · conferir (marcas de revisão ou pendência estrutural não
+  resolvida) · pronta (o resto). Os avisos passam a ser LISTADOS
+  (texto, não "3 aviso(s)"), na lista e no pós-salvar.
+
+### Adicionado
+- **Referência ABNT automática**: ficha completa + referência vazia →
+  gerada e gravada **ao salvar** ("referencia_abnt (gerada da ficha)" no
+  recibo) e **em lote** pelo Normalizar (etapa 5). Referência existente
+  nunca é sobrescrita: se divergir da que a ficha atual gera, o
+  formulário oferece **"↻ regenerar da ficha"** (cobre a referência
+  mutilada gerada antes de a autoria existir).
+- **Campo `resumo` no formulário** (textarea): o aviso mais comum
+  ("sem resumo — a IA terá de ler o texto todo") finalmente é
+  preenchível na mesa de Fichas.
+
 ## [3.13.1] — 2026-07-17 · Botões ← / ✕ com o ícone centrado
 
 ### Corrigido

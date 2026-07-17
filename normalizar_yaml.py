@@ -35,7 +35,10 @@ import sys
 import unicodedata
 from pathlib import Path
 
+import comum
+import frontmatter
 import taxonomia
+import validar_yaml_abnt
 
 # Vocabulário controlado de áreas — fonte única: o perfil ativo da taxonomia.
 # (A antiga cópia local tinha inclusive uma chave morta, "econômic", que o
@@ -189,6 +192,25 @@ def normalizar(texto: str):
         if derivado:
             novas.append(f"tipo: {derivado}                 # derivado do tipo_fonte — REVISE")
             mud.append(f"tipo: acrescentado ({derivado} — derivado do tipo_fonte)")
+
+    # `referencia_abnt` vazia + ficha COMPLETA (nenhum bloqueante vazio) =
+    # gerável da própria ficha — determinístico, nada é inventado. Ficha
+    # incompleta NÃO gera (sairia mutilada: ". 6.298, de ..."); referência
+    # existente NUNCA é tocada (curadoria vence).
+    if not _valor_de("referencia_abnt"):
+        tf_v = _valor_de("tipo_fonte")
+        if tf_v in taxonomia.TIPOS_FONTE and taxonomia.eh_abnt(tf_v):
+            # reparse do frontmatter já normalizado: listas/blocos chegam
+            # a montar_referencia como valores de verdade, não linhas cruas
+            campos = frontmatter.ler(
+                "---\n" + "\n".join(novas) + "\n---\ncorpo\n").campos
+            completa = not any(comum.vazio(campos.get(c))
+                               for c in taxonomia.campos_bloqueantes(tf_v))
+            if completa:
+                ref = validar_yaml_abnt.montar_referencia(campos).strip()
+                if ref:
+                    novas.append(frontmatter.emitir("referencia_abnt", ref))
+                    mud.append("referencia_abnt: gerada da ficha — revise")
     cf = _valor_de("confiabilidade")
     if cf and cf not in taxonomia.CONFIABILIDADE:
         mud.append(f"⚠ confiabilidade fora do vocabulário: '{cf}' "

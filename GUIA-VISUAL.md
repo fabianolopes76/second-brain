@@ -134,7 +134,9 @@ Para ajustar ou confirmar: **✎ Editar** → o formulário abre com exatamente 
 1. **Ficha** — o que ainda falta *neste formulário* ("preencha: autoria, ementa — destacados abaixo") ou ✓ completa;
 2. **Outras etapas** — o que **não se resolve aqui** e para onde vai: ex. *"arquivo gigante ⤳ resolve-se na etapa 5 — Fatiar"*; e se as fatias **já existem**, aparece como **✓ resolvido** ("o mestre fica inteiro por design") em vez de assustar.
 
-A **referência ABNT** ninguém digita à mão: quando a ficha está completa, o painel mostra a sugestão montada dela — *↳ usar a sugestão*. Com campos obrigatórios vazios a sugestão **não aparece** (sairia mutilada) e o painel diz o que falta para liberá-la.
+A **referência ABNT** ninguém digita à mão: com a ficha completa e o campo vazio, ela é **gerada e gravada automaticamente ao salvar** (o recibo mostra "referencia_abnt (gerada da ficha)"). Se já existir uma referência que **difere** da que a ficha atual gera, aparece o botão *↻ regenerar da ficha* — você decide. O **Normalizar** (etapa 5) faz o mesmo em lote para todas as fichas completas. Com obrigatórios vazios nada é gerado (sairia mutilado) e o painel diz o que falta.
+
+**Salvar = revisar**: ao salvar, as marcas *"palpite da triagem"* / *"derivado automaticamente"* somem — você viu e confirmou. Com isso (e sem pendência de outra etapa), a ficha vai para **✓ Prontas** mesmo que restem avisos de texto (hifenização de OCR etc.) — eles ficam listados, mas não seguram: não são problema da ficha.
 
 > Campo deixado **em branco não mexe** no arquivo. O mestre é o `2-MARKDOWN-BRUTO`: depois de corrigir, **refatie** (etapa 5) para as fatias herdarem a ficha.
 

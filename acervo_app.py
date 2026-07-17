@@ -900,9 +900,13 @@ def _classificar_ficha(f: Path) -> dict:
     if str(fm.get("confiabilidade") or "") == "A-conferir":
         revisar.append("confiabilidade A-conferir")
 
+    # Avisos genéricos NÃO seguram a ficha em "conferir": "hifenização
+    # quebrada" é do TEXTO, não da ficha — prendê-la por isso deixaria
+    # obras OCRizadas eternamente fora de "Prontas". O que exige o humano
+    # aqui é: erro de ficha, marca de revisão ou pendência não resolvida.
     if nota == "REPROVADO":
         grupo = "corrigir"
-    elif revisar or nota != "PRONTO":
+    elif revisar or estruturais_pendentes:
         grupo = "conferir"
     else:
         grupo = "pronta"
@@ -918,6 +922,7 @@ def _classificar_ficha(f: Path) -> dict:
         "faltam_campos": faltam,
         "erros_ficha": erros_ficha,
         "pendencias_outras_etapas": pendencias,
+        "avisos": r.get("avisos", [])[:3],
         "n_avisos": len(r.get("avisos", [])),
         "revisar": revisar,
         "grupo": grupo,
@@ -1022,11 +1027,45 @@ def salvar_ficha(nome: str, campos: dict):
     if not novos:
         return {"ok": False, "msg": "nenhum campo preenchido."}
     texto = p.read_text(encoding="utf-8", errors="replace")
-    p.write_text(_atualizar_frontmatter(texto, novos), encoding="utf-8")
+    novo = _atualizar_frontmatter(texto, novos)
+    # SALVAR = REVISAR: o humano viu tipo_fonte/tipo no formulário — as
+    # marcas "REVISE" da automação cumpriram o papel e saem do arquivo
+    # (sem isso a ficha ficava presa em "Conferir" para sempre).
+    novo = re.sub(
+        r"[ \t]*# (?:palpite da triagem|derivado do tipo_fonte) — REVISE", "", novo)
+    p.write_text(novo, encoding="utf-8")
+    gravados = sorted(novos)
+
+    # Ficha completa + referência VAZIA → gera da própria ficha, na hora
+    # (determinístico: só combina o que o humano preencheu — nada inventado).
+    # Referência já existente NUNCA é sobrescrita aqui (curadoria vence);
+    # para essa há o botão "↻ regenerar da ficha" no formulário.
+    cls = _classificar_ficha(p)
+    fm = frontmatter.ler(p.read_text(encoding="utf-8", errors="replace")).campos
+    tf = str(fm.get("tipo_fonte") or "")
+    # "referencia_abnt vazia" é erro de ficha, mas é O erro que a geração
+    # resolve — não pode barrar a si mesma; só os DEMAIS erros barram.
+    so_falta_ref = (not cls["faltam_campos"]
+                    and all(e.startswith("referencia_abnt")
+                            for e in cls["erros_ficha"]))
+    if (so_falta_ref and comum.vazio(fm.get("referencia_abnt"))
+            and tf in taxonomia.TIPOS_FONTE and taxonomia.eh_abnt(tf)):
+        try:
+            import validar_yaml_abnt
+            ref = validar_yaml_abnt.montar_referencia(fm).strip()
+        except Exception:
+            ref = ""
+        if ref:
+            p.write_text(_atualizar_frontmatter(
+                p.read_text(encoding="utf-8", errors="replace"),
+                {"referencia_abnt": ref}), encoding="utf-8")
+            gravados.append("referencia_abnt (gerada da ficha)")
+            cls = _classificar_ficha(p)
+
     with _FICHAS_LOCK:                      # mtime pode ser grosseiro no /mnt
         _FICHAS_CACHE["chave"] = None
-    resposta = {"ok": True, "gravados": sorted(novos)}
-    resposta.update(_classificar_ficha(p))
+    resposta = {"ok": True, "gravados": gravados}
+    resposta.update(cls)
     return resposta
 
 
@@ -1078,13 +1117,20 @@ class Handler(BaseHTTPRequestHandler):
             # sabe sugerir — mas SÓ com os bloqueantes preenchidos (com
             # autoria vazia a sugestão sai mutilada: ". 6.298, de ...")
             plano["_sugestao_referencia"] = ""
+            # o erro "referencia_abnt vazia" não bloqueia a própria sugestão
+            erros_nref = [e for e in cls["erros_ficha"]
+                          if not e.startswith("referencia_abnt")]
             bloqueio = cls["faltam_campos"] or (
-                ["tipo_fonte"] if cls["erros_ficha"] else [])
+                ["tipo_fonte"] if erros_nref else [])
             if not bloqueio:
+                # a sugestão vem SEMPRE que a ficha permite — mesmo com uma
+                # referência já gravada: se divergirem, o formulário oferece
+                # "↻ regenerar da ficha" (cobre referência gerada mutilada
+                # antes de a ficha estar completa)
                 try:
                     import validar_yaml_abnt
                     plano["_sugestao_referencia"] = (
-                        validar_yaml_abnt.montar_referencia(fm))
+                        validar_yaml_abnt.montar_referencia(fm).strip())
                 except Exception:
                     pass
             else:
@@ -2219,7 +2265,7 @@ async function carregarFichas(){
             ? `<br><span class="pok">✓ ${esc(p.msg.split(' — ')[0].split('.')[0])} — ${esc(p.orientacao)}</span>`
             : `<br><span class="rev">⤳ ${esc(p.msg.split(' — ')[0])} — ${esc(p.orientacao)}</span>`).join('')}
         ${f.revisar.length ? `<br><span class="rev">⚠ ${f.revisar.map(esc).join(' · ')}</span>` : ''}
-        ${f.n_avisos ? `<br><span class="rev">⚠ ${f.n_avisos} aviso(s) na auditoria</span>` : ''}
+        ${f.avisos.length ? `<br><span style="opacity:.75">avisos (não bloqueiam): ${f.avisos.map(esc).join(' · ')}${f.n_avisos>f.avisos.length?` · +${f.n_avisos-f.avisos.length}`:''}</span>` : ''}
       </div></div>`;
   const grupo = (t, cls, arr) => arr.length
     ? `<div class="fgrupo ${cls}">${t} (${arr.length})</div>` + arr.map(item).join('') : '';
@@ -2244,6 +2290,12 @@ function campoFicha(c){
   const falta = bloqueante && !v;
   const ast = bloqueante ? ' <span class="ob" title="obrigatório para este tipo — bloqueia a publicação se vazio">*</span>' : '';
   const cls = falta ? 'campo falta' : 'campo';
+  if(c === 'resumo'){
+    // 3–8 linhas que a IA lê primeiro; o gravador é linha-a-linha, então
+    // as quebras viram espaço ao salvar
+    return `<div class="${cls}"><label>resumo · 3–8 linhas — a IA lê isto primeiro</label>
+      <textarea id="f_resumo" rows="3" style="width:100%;resize:vertical" placeholder="(em branco = não mexe)">${esc(v)}</textarea></div>`;
+  }
   if(F_SEL[c]){
     const ops = VOCAB[F_SEL[c]];
     return `<div class="${cls}"><label>${esc(c)}${ast}</label><select id="f_${esc(c)}">
@@ -2255,20 +2307,28 @@ function campoFicha(c){
     <input type="text" id="f_${esc(c)}" value="${esc(v)}" placeholder="(em branco = não mexe)"></div>`;
 }
 function campoReferencia(){
-  const v = F_CAMPOS.referencia_abnt || '';
+  const v = (F_CAMPOS.referencia_abnt || '').trim();
   const sug = F_CAMPOS._sugestao_referencia || '';
   const bloq = F_CAMPOS._sugestao_bloqueada_por || [];
+  let dica = '';
+  if(sug && !v){
+    dica = `<div class="dica">com a ficha completa, a referência é gravada <b>automaticamente</b> ao salvar:<br><i>${esc(sug)}</i></div>`;
+  } else if(sug && v && sug !== v){
+    dica = `<div class="dica">a referência gravada <b>difere</b> da que a ficha atual gera:<br><i>${esc(sug)}</i><br>
+      <button class="bnav" onclick="f_referencia_abnt.value=${q(sug)}" style="margin-top:4px">↻ regenerar da ficha</button>
+      <span style="opacity:.8">(troca no campo — salve para gravar; ignore se a sua versão manual é a correta)</span></div>`;
+  } else if(!v && bloq.length){
+    dica = `<div class="dica">a referência é gerada automaticamente quando <b>${bloq.map(esc).join(', ')}</b> estiverem preenchidos — gerar agora sairia mutilada.</div>`;
+  }
   return `<div class="campo"><label>referencia_abnt</label>
-    <input type="text" id="f_referencia_abnt" value="${esc(v)}" placeholder="(em branco = não mexe)">
-    ${(sug && !v) ? `<div class="dica">sugestão do validador, montada da ficha atual:<br><i>${esc(sug)}</i><br>
-      <button class="bnav" onclick="f_referencia_abnt.value=${q(sug)}" style="margin-top:4px">↳ usar a sugestão</button></div>` : ''}
-    ${(!sug && !v && bloq.length) ? `<div class="dica">a sugestão de referência aparece quando <b>${bloq.map(esc).join(', ')}</b> estiverem preenchidos — sugerir agora sairia mutilada.</div>` : ''}
+    <input type="text" id="f_referencia_abnt" value="${esc(v)}" placeholder="(vazia + ficha completa = gerada ao salvar)">
+    ${dica}
   </div>`;
 }
 function renderFicha(){
   const tf = F_CAMPOS.tipo_fonte || '';
   const obrig = (VOCAB.obrigatorios[tf] || []);
-  const fixos = ['tipo_fonte','tipo','area','status','confiabilidade'];
+  const fixos = ['tipo_fonte','tipo','area','status','confiabilidade','resumo'];
   const campos = [...fixos, ...obrig.filter(c=>!fixos.includes(c)), 'referencia_abnt'];
   fichaForm.innerHTML =
     (tf ? `<p class="sov-dica">obrigatórios de <b>${esc(tf)}</b>: ${obrig.map(esc).join(', ') || '—'}</p>`
@@ -2288,7 +2348,10 @@ function renderFicha(){
 async function salvarFicha(){
   const campos = {};
   document.querySelectorAll('#fichaForm [id^="f_"]').forEach(el=>{
-    if(el.value && el.value.trim()) campos[el.id.slice(2)] = el.value.trim();
+    // textarea (resumo): quebras de linha viram espaço — o frontmatter é
+    // gravado linha a linha
+    const v = el.value ? el.value.replace(/\s*\n\s*/g, ' ').trim() : '';
+    if(v) campos[el.id.slice(2)] = v;
   });
   const r = await (await fetch('/api/ficha',{method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -2315,7 +2378,11 @@ async function salvarFicha(){
           : `<span style="color:var(--warn)">⤳ ${esc(p.msg.split(' — ')[0])} — ${esc(p.orientacao)}</span>`).join('<br>')
       + `</div>`;
   }
-  html += `<p class="sov-dica">situação: <b>${esc(r.nota)}</b> · gravados: ${(r.gravados||[]).map(esc).join(', ')||'—'}</p>`;
+  if((r.avisos||[]).length){
+    html += `<div class="fb-bloco" style="opacity:.85"><b class="t" style="color:var(--muted)">Avisos — não bloqueiam nem seguram a ficha</b>`
+      + r.avisos.map(a=>`<span style="color:var(--muted)">• ${esc(a)}</span>`).join('<br>') + `</div>`;
+  }
+  html += `<p class="sov-dica">situação: <b>${esc(r.nota)}</b> · grupo: <b>${esc(r.grupo)}</b> · gravados: ${(r.gravados||[]).map(esc).join(', ')||'—'}</p>`;
   fsovErros.innerHTML = html;
   F_CAMPOS = await (await fetch('/api/ficha?arq='+encodeURIComponent(FICHA_ARQ))).json();
   renderFicha();
