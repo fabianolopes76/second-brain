@@ -29,7 +29,7 @@ O painel tem 4 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 ├──────────────────────────────────────────────────────────────┤
 │  01 · Configuração   ← seus PDFs + botão [⚙ Ambiente]        │
 │  02 · Execução       ← o "vidro da máquina": log ao vivo     │
-│  03 · Pipeline       ← O TRILHO: etapas 1 a 10, em ordem     │
+│  03 · Pipeline       ← O TRILHO: 9 etapas + ✎, em ordem     │
 │      └ Qualidade: [📋 Fichas] ← conferir/corrigir os YAML    │
 │  04 · Triagem        ← a tabela com o raio-X de cada PDF     │
 └──────────────────────────────────────────────────────────────┘
@@ -62,7 +62,7 @@ Fica logo abaixo da Configuração: quando você clica num botão do Pipeline, o
 - Linhas com **`AVISO (inofensivo)`** podem ser ignoradas (ex.: metadados que não cabem no formato PDF/A — o arquivo sai perfeito).
 - Linhas com **`FALHOU (rc=N: motivo)`** dizem exatamente o que houve (PDF corrompido, protegido por senha…).
 
-### 03 · Pipeline — o trilho de 10 etapas
+### 03 · Pipeline — o trilho de 9 etapas (+ ✎ Fichas)
 
 O coração do painel. As etapas formam um trilho em 6 grupos, e **o painel lê o disco para saber onde você está**: cada etapa aparece em um de três estados:
 
@@ -88,14 +88,13 @@ PREPARO (mecânico, sem IA)
   (4) Limpar OCR       [Limpar]                  → hifenização, cabeçalhos repetidos
   (5) Fatiar           [Fatiar]                  → livro grande → índice + fatias
 QUALIDADE
-  (6) Validar          [Validar]                 → âncoras + ficha ABNT completa?
+  (6) Qualidade        [📄] [Auditar qualidade]  → UM exame: âncoras + YAML + nota; triagem abre só
   (✎) Fichas           [📋 Abrir fichas]         → SEU passo: corrigir e confirmar as fichas
-  (7) Auditar          [Auditar]                 → nota final: PRONTO/PARCIAL/REPROVADO
 PUBLICAÇÃO
-  (8) Publicar         [Simular] [Publicar]      → leva o resultado ao vault do Obsidian
-  (9) Auditar vault    [Auditar vault]           → o "cérebro" está íntegro?
+  (7) Publicar         [Simular] [Publicar]      → leva o resultado ao vault do Obsidian
+  (8) Auditar vault    [Auditar vault]           → o "cérebro" está íntegro?
 MANUTENÇÃO
-  (10) Radar           [Fila de revisão] [Sinalizar A-conferir]
+  (9) Radar            [Fila de revisão] [Sinalizar A-conferir]
 ```
 
 **O que cada etapa faz, em uma frase:**
@@ -104,12 +103,11 @@ MANUTENÇÃO
 2. **OCR** — aplica reconhecimento de texto **só** nos PDFs escaneados, preservando o original (cria uma cópia `_OCR`).
 3. **Paginação** — converte para texto **guardando o número de cada página** (`{{p.45}}`). Sem isso, não há citação ABNT. Dá para processar um arquivo avulso pelo botão 📁, informando o *offset* se a página impressa não bater.
 4. **Limpar** — conserta o que o OCR quebrou (palavras hifenizadas, cabeçalhos repetidos). Mecânico, de graça.
-5. **Fatiar** — divide livros grandes em fatias de leitura rápida + uma nota-índice. É o formato que a IA consome bem.
-6. **Validar** — confere que nenhuma âncora se perdeu e que a ficha (autor, editora, ano…) está completa **para o tipo** (livro exige página; lei não).
-7. **Auditar** — dá a nota de cada arquivo: **PRONTO** (serve ao cérebro), **PARCIAL** (avisos) ou **REPROVADO** (corrigir antes de usar). Ao terminar, o **relatório-triagem abre sozinho** num painel lateral: ✗ graves com a **ação** de cada item (e atalho ✎ para corrigir a ficha na hora), ⚠ para conferir, avisos irrelevantes para publicar e ✓ ok — fatias agregadas por obra. Reabra quando quiser pelo botão **📄 Relatório**.
-8. **Publicar** — distribui o material pronto nas pastas certas do vault (doutrina por área, legislação, jurisprudência…). **Clique "Simular" primeiro** para ver o plano sem gravar. Notas reprovadas não entram; notas que você editou à mão no Obsidian **não são sobrescritas**.
-9. **Auditar vault** — verifica as *ligações* do cérebro: fatia órfã, link quebrado, nota que "sumiu" dos painéis por erro de preenchimento.
-10. **Radar** — cruza as novidades (leis alteradas, novos julgados — coletadas pelo assistente de IA na pasta `Radar/`) com as notas do seu acervo que as citam, e monta a **fila de revisão**. "Sinalizar A-conferir" marca as notas afetadas para você revisar — **a decisão de reclassificar é sempre sua**.
+5. **Fatiar** — divide livros grandes em fatias de leitura rápida + uma nota-índice; **documento pequeno é copiado inteiro** ao 3-MARKDOWN-LIMPO (também publica, como nota única). É o formato que a IA consome bem.
+6. **Qualidade** — o exame completo num clique: âncoras íntegras (presença, duplicadas, ordem, lacunas), YAML coerente com o tipo e a **nota** de cada arquivo (PRONTO/PARCIAL/REPROVADO). Ao terminar, o **relatório-triagem abre sozinho** — do grave ao irrelevante, cada item com a ação (e atalho ✎ para corrigir a ficha). Reabra pelo botão **📄 Relatório**.
+7. **Publicar** — distribui o material pronto nas pastas certas do vault (doutrina por área, legislação, jurisprudência…). **O card já antecipa a prontidão real**: quantas obras estão prontas ✓, quantas reprovadas (→ ✎ fichas) e quantas desatualizadas (→ refatie). **Clique "Simular" primeiro** para ver o plano sem gravar. Notas reprovadas não entram; notas que você editou à mão no Obsidian **não são sobrescritas**.
+8. **Auditar vault** — verifica as *ligações* do cérebro: fatia órfã, link quebrado, nota que "sumiu" dos painéis por erro de preenchimento.
+9. **Radar** — cruza as novidades (leis alteradas, novos julgados — coletadas pelo assistente de IA na pasta `Radar/`) com as notas do seu acervo que as citam, e monta a **fila de revisão**. "Sinalizar A-conferir" marca as notas afetadas para você revisar — **a decisão de reclassificar é sempre sua**.
 
 ### 04 · Triagem — o raio-X dos seus PDFs
 
@@ -123,7 +121,7 @@ Depois da etapa 1, esta tabela mostra, para cada arquivo: idioma detectado, se p
 
 ### ✎ Fichas — o SEU passo do trilho (grupo QUALIDADE)
 
-Entre o Validar (6) e o Auditar (7) existe um card **sem número, com um lápis ✎**: é o único passo do trilho que é **trabalho seu**, não de script. O card mostra ao vivo quantas fichas precisam de você e quantas você já resolveu — **"3 corrigir · 5 conferir · 4 prontas ✓"** — e fica verde quando todas estão prontas. O botão **📋 Abrir fichas** abre a mesa de revisão, com tudo separado pelo que merece atenção:
+Depois da Qualidade (6) existe um card **sem número, com um lápis ✎**: é o único passo do trilho que é **trabalho seu**, não de script. O card mostra ao vivo quantas fichas precisam de você e quantas você já resolveu — **"3 corrigir · 5 conferir · 4 prontas ✓"** — e fica verde quando todas estão prontas. O botão **📋 Abrir fichas** abre a mesa de revisão, com tudo separado pelo que merece atenção:
 
 - **✗ Corrigir** — bloqueiam a publicação (falta `tipo_fonte`, autoria, ementa…);
 - **⚠ Conferir** — o que a **automação atribuiu e espera a sua confirmação**: `tipo_fonte` que é palpite da triagem, `tipo` derivado automaticamente, status/confiabilidade `A-conferir`;
@@ -151,11 +149,11 @@ Um lote novo de PDFs, do download ao Obsidian:
 3. **(1) Analisar** → confira a tabela da seção 04.
 4. **(2) Aplicar OCR** → espere o log terminar.
 5. **(3) Converter** → **(4) Limpar** → **(5) Fatiar**.
-6. **(6) Validar** → **(7) Auditar** → leia as pendências (o refino fino — autor, resumo — é feito no Projeto Claude, como descreve o WORKFLOW).
-7. **(8) Simular** → conferiu? → **Publicar**.
-8. **(9) Auditar vault** → abra o Obsidian e navegue pelos MOCs. 🎉
+6. **(6) Auditar qualidade** → a triagem abre sozinha: corrija os graves na mesa **✎ Fichas** e refatie (5) se mexeu nas fichas.
+7. **(7) Simular** → conferiu? → **Publicar** (o card já diz quantas obras estão prontas e quantas ficariam retidas).
+8. **(8) Auditar vault** → abra o Obsidian e navegue pelos MOCs. 🎉
 
-Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e o cérebro continua vivo e confiável.
+Toda semana: **(9) Radar → Fila de revisão**, despache os itens marcados, e o cérebro continua vivo e confiável.
 
 ---
 
@@ -166,7 +164,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 3. Em *Settings → Community plugins*, instale e ative o **Dataview**.
 4. Abra `00-Indices-MOCs/MOC-Tributario` (ou o MOC da sua área): os painéis se preenchem sozinhos — Vigente, Pendências, Doutrina, Jurisprudência, Legislação, Novidades.
 
-> Os painéis refletem o preenchimento das fichas. Se uma nota "sumir" de um painel, rode a etapa **(9) Auditar vault** — o relatório aponta exatamente o campo a corrigir.
+> Os painéis refletem o preenchimento das fichas. Se uma nota "sumir" de um painel, rode a etapa **(8) Auditar vault** — o relatório aponta exatamente o campo a corrigir.
 
 ---
 
@@ -184,7 +182,7 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | Apareceu `AVISO (inofensivo)` no log | Ignorar — está explicado no próprio log. O arquivo saiu correto. Exemplos: metadados que não cabem no PDF/A; camada de texto ruim da origem (o OCR a substitui); jbig2enc ausente (PDF sai maior — instale pelo ⚙ Ambiente). |
 | `FALHOU (rc=8: PDF criptografado)` | O PDF tem senha — remova a proteção (imprimir → salvar como PDF resolve) e rode de novo. |
 | `FALHOU (rc=3: dependência ausente…)` | Atualize para a **v3.6.1+** (`git pull`): em versões antigas, **vírgula no nome do PDF** derrubava a detecção de idioma e o OCR falhava fingindo dependência ausente. Se persistir após atualizar, falta mesmo uma ferramenta — abra **⚙ Ambiente** e envie o comando ao suporte. |
-| Nota não aparece no MOC do Obsidian | Etapa **(9) Auditar vault** → abra `RELATORIO-VAULT.md` no próprio vault: ele lista a causa e a correção. |
+| Nota não aparece no MOC do Obsidian | Etapa **(8) Auditar vault** → abra `RELATORIO-VAULT.md` no próprio vault: ele lista a causa e a correção. |
 | O painel pergunta "já concluída — continuar?" | Você clicou numa etapa verde. Se foi de propósito (reprocessar), confirme; senão, cancele. |
 | "Converter pasta" respondia "nenhum arquivo exige âncora" | Versão antiga (≤3.7): só convertia livros. Atualize para a **v3.8.0+** — converte todos os PDFs pesquisáveis e lista no log os pulados por falta de OCR. |
 | Corrigir idioma diz "não deu para detectar" | Atualize para a **v3.8.0+** (detecta pela cópia `_OCR` e pelo texto do próprio markdown). Se ainda assim não der, o caso é manual: peça ao suporte para rodar `corrigir_idioma.py arquivo.md --forcar por`. |

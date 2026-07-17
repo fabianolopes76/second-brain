@@ -396,6 +396,7 @@ def progresso():
         r["bruto"] = len(mds)
         r["limpo"] = sum(1 for f in bruto.glob("*.md.bak"))
     r["fichas"] = resumo_fichas()   # cacheado: só reaudita quando um md muda
+    r["pub"] = resumo_publicacao()  # idem: prontidão real da publicação
 
     limpo = base / "3-MARKDOWN-LIMPO"
     if limpo.is_dir():
@@ -721,6 +722,24 @@ def acao_normalizar():
     return JOB.start("Normalizar YAML (Obsidian)", cmd)
 
 
+def acao_qualidade(pasta=""):
+    """Etapa 6 unificada (v3.16): integridade técnica das âncoras + auditoria
+    com nota, num job só — o relatório-triagem abre ao terminar. (O antigo
+    "Validar" foi absorvido: as checagens exclusivas dele viraram avisos do
+    próprio auditor.)"""
+    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "2-MARKDOWN-BRUTO")
+    if not alvo.is_dir():
+        return False, "Pasta não encontrada. Converta antes (etapa 3)."
+    vpy = Path(CFG["venv"]) / "bin" / "python"
+    va = Path(CFG["scripts"]) / "verificar_ancoras.py"
+    aud = Path(CFG["scripts"]) / "auditar_acervo.py"
+    cmd = (f'echo "=== ANCORAS — integridade tecnica ===" ; '
+           f'{shlex.quote(str(vpy))} {shlex.quote(str(va))} {shlex.quote(str(alvo))} ; '
+           f'echo "" ; echo "=== AUDITORIA — nota por arquivo ===" ; '
+           f'python3 {shlex.quote(str(aud))} {shlex.quote(str(alvo))} --detalhado')
+    return JOB.start(f"Qualidade — {alvo.name}", cmd)
+
+
 def acao_auditar(pasta=""):
     """Audita se o conteúdo gerado atende aos requisitos do segundo cérebro."""
     alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "2-MARKDOWN-BRUTO")
@@ -1026,6 +1045,65 @@ def resumo_fichas():
     return resumo
 
 
+# Prontidão REAL de publicação para o card 7 (dot "7"). "N arquivos no
+# limpo" não diz nada: o publicar tem trava de qualidade (REPROVADO não
+# entra; fatia fica retida com o índice) — o card antecipa isso auditando
+# só a CAMADA-1 do limpo (índices + mestres únicos, ~10 ms) e detectando
+# bruto mais novo que o derivado (refatie). Cache no padrão do resumo_fichas.
+_PUB_CACHE = {"chave": None, "resumo": None}
+_PUB_VAZIO = {"obras": 0, "prontas": 0, "reprovadas": 0,
+              "desatualizadas": 0, "fora_do_limpo": 0}
+
+
+def resumo_publicacao():
+    if not CFG["root"]:
+        return dict(_PUB_VAZIO)
+    base = Path(CFG["root"])
+    limpo, bruto = base / "3-MARKDOWN-LIMPO", base / "2-MARKDOWN-BRUTO"
+    if not limpo.is_dir():
+        return dict(_PUB_VAZIO)
+    try:
+        camada1 = [f for f in limpo.glob("*.md")
+                   if not f.name.startswith(("RELATORIO", "_"))
+                   and not re.search(r"_p\d{2,}$", f.stem)]
+        mestres = ([f for f in bruto.glob("*.md")
+                    if not f.name.startswith(("RELATORIO", "_"))]
+                   if bruto.is_dir() else [])
+        chave = tuple(sorted(
+            (str(f), f.stat().st_mtime_ns, f.stat().st_size)
+            for f in camada1 + mestres))
+    except OSError:
+        chave = None
+    with _FICHAS_LOCK:
+        if chave is not None and chave == _PUB_CACHE["chave"]:
+            return _PUB_CACHE["resumo"]
+    r = dict(_PUB_VAZIO)
+    r["obras"] = len(camada1)
+    for f in camada1:
+        try:
+            nota = _nota_auditoria(_auditar_arquivo(f))
+        except Exception:
+            continue
+        r["reprovadas" if nota == "REPROVADO" else "prontas"] += 1
+    # staleness bruto→limpo: ficha corrigida no mestre exige REFATIAR
+    for m in mestres:
+        pref = comum.prefixo_fatia(m.stem)
+        derivado = limpo / f"{pref}_INDICE.md"
+        if not derivado.exists():
+            derivado = limpo / m.name        # mestre pequeno copiado inteiro
+        try:
+            if not derivado.exists():
+                r["fora_do_limpo"] += 1
+            elif m.stat().st_mtime > derivado.stat().st_mtime:
+                r["desatualizadas"] += 1
+        except OSError:
+            continue
+    with _FICHAS_LOCK:
+        _PUB_CACHE["chave"] = chave
+        _PUB_CACHE["resumo"] = r
+    return r
+
+
 def _atualizar_frontmatter(texto: str, novos: dict) -> str:
     """Atualiza campos do frontmatter linha a linha, preservando o resto
     (comentários e campos não tocados). Substituir um campo remove também
@@ -1105,6 +1183,7 @@ def salvar_ficha(nome: str, campos: dict):
 
     with _FICHAS_LOCK:                      # mtime pode ser grosseiro no /mnt
         _FICHAS_CACHE["chave"] = None
+        _PUB_CACHE["chave"] = None
     resposta = {"ok": True, "gravados": gravados}
     resposta.update(cls)
     return resposta
@@ -1287,6 +1366,8 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = acao_corrigir_idioma()
             elif a == "normalizar":
                 ok, msg = acao_normalizar()
+            elif a == "qualidade":
+                ok, msg = acao_qualidade(data.get("pasta", ""))
             elif a == "auditar":
                 ok, msg = acao_auditar(data.get("pasta", ""))
             elif a == "validar":
@@ -1776,10 +1857,18 @@ tr:hover td{background:var(--surf2)}
       <div class="bar"><div class="dot">6</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
-          <h3>Validar</h3><button class="iet" onclick="abrirInfo('e6')" title="O que faz esta etapa?">i</button>
-          <span class="desc">Âncoras íntegras · YAML coerente com o tipo de fonte.</span>
+          <h3>Qualidade</h3><button class="iet" onclick="abrirInfo('e6')" title="O que faz esta etapa?">i</button>
+          <span class="desc">Um exame só: âncoras íntegras · YAML coerente · nota <b>PRONTO/PARCIAL/REPROVADO</b>. A triagem abre ao terminar.</span>
           <span class="st" id="s6">—</span>
-          <div class="acoes"><button data-a onclick="acao('validar')">Validar</button></div>
+          <div class="acoes">
+            <button class="bnav" onclick="abrirNav('audp','dir')">📁</button>
+            <button onclick="abrirAuditoria()" title="triagem do que a auditoria achou: do grave ao irrelevante, com a ação de cada item">📄 Relatório</button>
+            <button data-a class="primary" onclick="acao('qualidade',{pasta:audp.value})">Auditar qualidade</button>
+          </div>
+        </div>
+        <div class="extra">
+          <input type="text" id="audp" placeholder="(padrão: 2-MARKDOWN-BRUTO)">
+          <div class="dica">O que sobrar de pendência aqui — autor, título, editora, ano, resumo — corrige-se no card <b>✎ Fichas</b> abaixo; o refino fino é o <b>Projeto Claude</b> (Fase 3c do WORKFLOW).</div>
         </div>
       </div>
     </div>
@@ -1796,31 +1885,12 @@ tr:hover td{background:var(--surf2)}
       </div>
     </div>
 
-    <div class="et" id="e7">
-      <div class="bar"><div class="dot">7</div><div class="linha"></div></div>
-      <div class="conteudo">
-        <div class="topo">
-          <h3>Auditar</h3><button class="iet" onclick="abrirInfo('e7')" title="O que faz esta etapa?">i</button>
-          <span class="desc">O gerado <b>serve</b> ao segundo cérebro? Relatório com pendências.</span>
-          <span class="st" id="s7">—</span>
-          <div class="acoes">
-            <button class="bnav" onclick="abrirNav('audp','dir')">📁</button>
-            <button onclick="abrirAuditoria()" title="triagem do que a auditoria achou: do grave ao irrelevante, com a ação de cada item">📄 Relatório</button>
-            <button data-a class="primary" onclick="acao('auditar',{pasta:audp.value})">Auditar</button>
-          </div>
-        </div>
-        <div class="extra">
-          <input type="text" id="audp" placeholder="(padrão: 2-MARKDOWN-BRUTO)">
-          <div class="dica">O que sobrar de pendência aqui — autor, título, editora, ano, resumo — é o trabalho do <b>Projeto Claude</b> (Fase 3c do WORKFLOW).</div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <div class="fase">Publicação — o segundo cérebro no Obsidian</div>
   <div class="trilho">
     <div class="et" id="e8">
-      <div class="bar"><div class="dot">8</div><div class="linha"></div></div>
+      <div class="bar"><div class="dot">7</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
           <h3>Publicar</h3><button class="iet" onclick="abrirInfo('e8')" title="O que faz esta etapa?">i</button>
@@ -1840,7 +1910,7 @@ tr:hover td{background:var(--surf2)}
     </div>
 
     <div class="et" id="e9">
-      <div class="bar"><div class="dot">9</div><div class="linha"></div></div>
+      <div class="bar"><div class="dot">8</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
           <h3>Auditar vault</h3><button class="iet" onclick="abrirInfo('e9')" title="O que faz esta etapa?">i</button>
@@ -1860,7 +1930,7 @@ tr:hover td{background:var(--surf2)}
   <div class="fase">Manutenção — o radar mantém o cérebro vivo</div>
   <div class="trilho">
     <div class="et" id="e10">
-      <div class="bar"><div class="dot">10</div><div class="linha"></div></div>
+      <div class="bar"><div class="dot">9</div><div class="linha"></div></div>
       <div class="conteudo">
         <div class="topo">
           <h3>Radar</h3><button class="iet" onclick="abrirInfo('e10')" title="O que faz esta etapa?">i</button>
@@ -2235,31 +2305,27 @@ const INFO = {
   a:[['Fatiar','roda <code>fatiar.py</code> sobre <code>2-MARKDOWN-BRUTO/</code> gravando em <code>3-MARKDOWN-LIMPO/</code>; o campo numérico define as palavras por fatia (padrão 1200).'],
      ['Normalizar','roda <code>normalizar_yaml.py</code> no 2-MARKDOWN-BRUTO e no 3-MARKDOWN-LIMPO: deixa area/tags/autoria no formato do Obsidian e preenche <code>tipo</code> quando ele decorre sem ambiguidade do tipo_fonte (legislacao→Legislação) — sem <code>tipo</code>, a nota não tem rota de publicação. Não inventa vigência: status desconhecido vira <i>A-conferir</i>.']],
   s:'Nota-índice + fatias em <code>3-MARKDOWN-LIMPO/</code> — é isto que se publica no vault.'},
- e6:{t:'6 · Validar — as travas de qualidade',
-  o:'Duas verificações que evitam retrabalho lá na frente: <b>âncoras íntegras</b> (nenhuma página se perdeu na conversão/limpeza) e <b>YAML coerente com o tipo</b> (livro exige página e editora; lei não). Metadado errado não dá erro no Obsidian — a nota some dos painéis em silêncio. Validar aqui é o que impede esse silêncio.',
-  a:[['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
-  s:'Relatório no log da seção 02 (não grava arquivo). Correções e confirmações: card <b>✎ Fichas</b>, logo abaixo.'},
+ e6:{t:'6 · Qualidade — o exame completo, num clique',
+  o:'A fusão do antigo "Validar" com o antigo "Auditar" (eram dois botões parecidos): um job só examina <b>âncoras</b> (presença e integridade: duplicadas, fora de ordem, lacunas), <b>YAML coerente com o tipo</b> (campos, localizador, sistema de chamada) e dá a <b>nota</b> de cada arquivo — PRONTO, PARCIAL ou REPROVADO. Ao terminar, o <b>relatório-triagem abre sozinho</b>, do grave ao irrelevante, com a ação de cada item.',
+  a:[['Auditar qualidade','roda <code>verificar_ancoras.py</code> + <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
+     ['📄 Relatório','reabre a triagem a qualquer momento: ✗ GRAVES (bloqueiam a publicação, com AÇÃO e atalho ✎), ⚠ CONFERIR, avisos irrelevantes, ✓ OK — fatias agregadas por obra.'],
+     ['📁','escolhe outra pasta para examinar.']],
+  s:'<code>RELATORIO-AUDITORIA.md</code> + a triagem no painel lateral. O que reprova corrige-se no card <b>✎ Fichas</b>.'},
  ef:{t:'✎ · Fichas — a revisão humana (saneamento)',
   o:'O passo sem número do trilho: é <b>trabalho seu</b>, não de script — por isso o ✎. O card mostra ao vivo quantas fichas <b>bloqueiam</b> a publicação e quantas aguardam a sua <b>confirmação</b> do que a automação atribuiu. Erro que não se resolve na ficha (ex.: arquivo gigante) aparece <b>encaminhado</b> para a etapa certa — e como resolvido quando o disco prova que já foi (fatias existem).',
   a:[['📋 Abrir fichas','painel lateral com todas as fichas em 3 grupos: ✗ <b>Corrigir</b> (REPROVADAS — bloqueiam a publicação), ⚠ <b>Conferir</b> (palpite de tipo_fonte, tipo derivado, A-conferir) e ✓ Prontas. "✎ Editar" abre o formulário: campos exigidos pelo tipo com <b>asterisco</b>, vazios em <b>vermelho</b>, sugestão de referência ABNT quando a ficha permite; salvar revalida na hora.']],
   s:'Os próprios <code>.md</code> do <code>2-MARKDOWN-BRUTO</code>, corrigidos campo a campo. Depois de mexer nas fichas, <b>refatie</b> (etapa 5) — as fatias herdam.'},
- e7:{t:'7 · Auditar — a nota final de cada arquivo',
-  o:'Responde à pergunta "isto <b>serve</b> ao segundo cérebro?": cruza ficha, âncoras e conteúdo e dá a cada arquivo uma nota — <b>PRONTO</b>, <b>PARCIAL</b> (avisos) ou <b>REPROVADO</b> (corrigir antes de publicar; a etapa 8 recusa reprovados).',
-  a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>. Ao terminar, o relatório-triagem abre sozinho no painel lateral.'],
-     ['📄 Relatório','abre a <b>triagem</b> do que a auditoria achou, do mais grave ao irrelevante: ✗ GRAVES (bloqueiam a publicação, com a AÇÃO e o atalho ✎ para corrigir a ficha na hora), ⚠ CONFERIR (decisão sua pendente), avisos irrelevantes para publicar, ✓ OK — e as fatias agregadas por obra.'],
-     ['📁','escolhe outra pasta para auditar.']],
-  s:'<code>RELATORIO-AUDITORIA.md</code> com as pendências. O refino fino (autor, resumo) é trabalho do Projeto Claude — Fase 3c do WORKFLOW.'},
- e8:{t:'8 · Publicar — o conteúdo chega ao vault',
-  o:'Distribui <code>3-MARKDOWN-LIMPO/</code> nas pastas certas do vault por <b>regra</b> (tipo→pasta do perfil: doutrina por área, legislação, jurisprudência…), fatias junto do índice. Três travas: nota REPROVADA não entra; <b>copiar, nunca mover</b>; em conflito, <b>o vault vence</b> (sua curadoria manual não é sobrescrita). Se o índice de uma obra não publica (sem <code>tipo</code> ou reprovado), as fatias ficam <b>retidas com ele</b> — fatia sem índice nasceria órfã no vault. A rota vem do campo <code>tipo</code>: rode <b>Normalizar</b> (etapa 5) para derivá-lo do tipo_fonte quando não há ambiguidade; a ficha completa (autoria, ano…) é o refino da Fase 3c.',
+ e8:{t:'7 · Publicar — o conteúdo chega ao vault',
+  o:'Distribui <code>3-MARKDOWN-LIMPO/</code> nas pastas certas do vault por <b>regra</b> (tipo→pasta do perfil: doutrina por área, legislação, jurisprudência…), fatias junto do índice. Três travas: nota REPROVADA não entra; <b>copiar, nunca mover</b>; em conflito, <b>o vault vence</b> (sua curadoria manual não é sobrescrita). Se o índice de uma obra não publica (sem <code>tipo</code> ou reprovado), as fatias ficam <b>retidas com ele</b> — fatia sem índice nasceria órfã no vault. O card mostra a <b>prontidão real</b> antes de você clicar: obras prontas ✓, reprovadas (→ ✎ fichas), desatualizadas ou fora do limpo (→ refatie, etapa 5) — sem verde total, a publicação sai parcial.',
   a:[['Simular','roda <code>publicar.py --dry</code>: mostra o plano completo (o que iria para onde) sem gravar nada. <b>Sempre simule primeiro.</b>'],
      ['Publicar','roda <code>publicar.py</code> de verdade e grava <code>RELATORIO-PUBLICACAO.md</code> no vault.'],
      ['📁','escolhe outro vault (padrão <code>4-OBSIDIAN-VAULT/</code>).']],
   s:'Notas copiadas ao vault + <code>RELATORIO-PUBLICACAO.md</code>. Abra o Obsidian e navegue pelos MOCs.'},
- e9:{t:'9 · Auditar vault — o grafo está íntegro?',
+ e9:{t:'8 · Auditar vault — o grafo está íntegro?',
   o:'O que nenhuma checagem arquivo-a-arquivo enxerga: fatia órfã, <code>partes:</code> que não bate com as fatias reais, wikilink quebrado, vocabulário fora do perfil (a nota <b>some dos painéis</b> Dataview sem erro), área sem MOC, nome duplicado.',
   a:[['Auditar vault','roda <code>auditar_vault.py --detalhado</code> no vault e grava <code>RELATORIO-VAULT.md</code> — cada achado vem com a causa e a correção.']],
   s:'<code>RELATORIO-VAULT.md</code> dentro do vault (abra no próprio Obsidian).'},
- e10:{t:'10 · Radar — o cérebro continua vivo',
+ e10:{t:'9 · Radar — o cérebro continua vivo',
   o:'As novidades (leis alteradas, julgados novos) coletadas pelo assistente na pasta <code>Radar/</code> são cruzadas com as notas do acervo que as citam — por <b>identificador forte</b> (Lei nº, Tema, Súmula, nº CNJ), não por palpite. O radar <b>sinaliza</b>; a decisão de reclassificar é sempre sua.',
   a:[['Fila de revisão','roda <code>radar.py</code>: correlaciona os achados novos e grava <code>RELATORIO-RADAR.md</code> com a fila do que conferir.'],
      ['Sinalizar A-conferir','roda <code>radar.py --aplicar</code>: marca <code>status: A-conferir</code> nas notas afetadas — elas aparecem no painel de pendências do MOC até você despachar.']],
@@ -2528,7 +2594,7 @@ function editarDaAuditoria(arq){
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
-                       fatiar:'e5', validar:'e6', auditar:'e7',
+                       fatiar:'e5', qualidade:'e6', validar:'e6', auditar:'e6',
                        publicar:'e8', auditar_vault:'e9', radar:'e10'};
 async function acao(a,extra){
   const et = document.getElementById(ETAPA_DA_ACAO[a]||'');
@@ -2587,6 +2653,7 @@ let JOB_RODANDO = false;   // detecta a transição rodando→terminou (auto-abr
 /* ---------- trilho: estado de cada etapa ---------- */
 function marcar(id, estadoEt, texto, classe){
   const et = document.getElementById(id);
+  if(!et) return;   // etapa que deixou de existir (fusão da Qualidade)
   et.className = 'et ' + estadoEt;
   const st = document.getElementById('s' + id.slice(1));
   st.textContent = texto;
@@ -2618,9 +2685,10 @@ function atualizarTrilho(p, temRoot){
   if(!p.bruto)          marcar('e5','bloq','converta antes','');
   else if(p.fatias)     marcar('e5','feito', p.fatias+' fatias','ok');
   else                  marcar('e5','ativa','livros grandes','pend');
-  // 6 validar
+  // 6 qualidade (fusão validar+auditar — v3.16)
   if(!p.bruto)          marcar('e6','bloq','converta antes','');
-  else                  marcar('e6','ativa','pronto','');
+  else if(p.auditado)   marcar('e6','feito','relatório gerado'+dt('auditado'),'ok');
+  else                  marcar('e6','ativa','pronto','pend');
   // ✎ fichas — saneamento humano (contadores do resumo cacheado no servidor).
   // As PRONTAS aparecem sempre: é o que mostra o progresso — sem elas,
   // "12 corrigir" parado esconde que uma ficha acabou de ficar pronta.
@@ -2634,14 +2702,19 @@ function atualizarTrilho(p, temRoot){
     marcar('ef','ativa', partes.join(' · '),'pend');
   }
   else                  marcar('ef','feito', (fi.prontas||0)+' prontas','ok');
-  // 7 auditar
-  if(!p.bruto)          marcar('e7','bloq','converta antes','');
-  else if(p.auditado)   marcar('e7','feito','relatório gerado'+dt('auditado'),'ok');
-  else                  marcar('e7','ativa','pronto','pend');
-  // 8 publicar (Fase 5 determinística)
-  if(!p.limpo_md)       marcar('e8','bloq','prepare 3-MARKDOWN-LIMPO','');
-  else if(p.publicado)  marcar('e8','feito', p.vault+' notas'+dt('publicado'),'ok');
-  else                  marcar('e8','ativa', p.limpo_md+' prontos p/ publicar','pend');
+  // 7(dot) publicar — prontidão REAL: auditoria da camada-1 + staleness.
+  // "N arquivos no limpo" mentia: reprovada não publica, fatia fica retida.
+  const pb = p.pub || {};
+  const pendPub = (pb.reprovadas||0) + (pb.desatualizadas||0) + (pb.fora_do_limpo||0);
+  const pp = [];
+  if(pb.prontas)        pp.push(pb.prontas+' obra(s) prontas ✓');
+  if(pb.reprovadas)     pp.push(pb.reprovadas+' reprovadas → ✎ fichas');
+  if(pb.desatualizadas) pp.push(pb.desatualizadas+' desatualizadas → refatie (5)');
+  if(pb.fora_do_limpo)  pp.push(pb.fora_do_limpo+' fora do limpo → fatie (5)');
+  const txtPub = pp.join(' · ') || (p.limpo_md + ' no limpo');
+  if(!p.limpo_md)               marcar('e8','bloq','prepare 3-MARKDOWN-LIMPO','');
+  else if(p.publicado && !pendPub) marcar('e8','feito', txtPub+dt('publicado'),'ok');
+  else                          marcar('e8','ativa', txtPub, pendPub?'pend':'ok');
   // 9 auditar vault (grafo)
   if(!p.vault)              marcar('e9','bloq','publique o vault antes','');
   else if(p.vault_auditado) marcar('e9','feito','grafo auditado'+dt('vault_auditado'),'ok');
@@ -2666,7 +2739,8 @@ async function estado(){
 
   const j = s.job;
   // auditoria concluída → o relatório-triagem abre sozinho no slideover
-  if(JOB_RODANDO && !j.running && j.action === 'auditar' && j.rc !== null){
+  if(JOB_RODANDO && !j.running && j.rc !== null
+     && (j.action === 'qualidade' || j.action === 'auditar')){
     abrirAuditoria();
   }
   JOB_RODANDO = j.running;

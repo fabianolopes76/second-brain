@@ -146,13 +146,22 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
     fm, corpo, fm_bruto = ler_frontmatter(texto)
     n_pal = len(corpo.split())
 
+    # Mestre que NÃO fatia é COPIADO inteiro ao destino: sem isso ele nunca
+    # chegava ao 3-MARKDOWN-LIMPO — e o publicar só publica o que está lá
+    # (mestres pequenos ficavam sem rota para o vault).
     if n_pal < minimo:
-        print(f"— {arq.name}: {n_pal:,} palavras (abaixo de {minimo:,}) — não fatiado")
+        destino.mkdir(parents=True, exist_ok=True)
+        (destino / arq.name).write_text(texto, encoding="utf-8")
+        print(f"— {arq.name}: {n_pal:,} palavras (abaixo de {minimo:,}) — "
+              "copiado INTEIRO ao destino (publica como nota única)")
         return 0
 
     fatias = fatiar(corpo, alvo, teto)
     if len(fatias) < 2:
-        print(f"— {arq.name}: não foi possível fatiar (sem títulos/âncoras úteis)")
+        destino.mkdir(parents=True, exist_ok=True)
+        (destino / arq.name).write_text(texto, encoding="utf-8")
+        print(f"— {arq.name}: não foi possível fatiar (sem títulos/âncoras úteis) "
+              "— copiado INTEIRO ao destino (publica como nota única)")
         return 0
 
     destino.mkdir(parents=True, exist_ok=True)

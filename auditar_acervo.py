@@ -87,6 +87,34 @@ def _erro(r, cod, msg):
 # códigos cujo conserto é NA FICHA (formulário); o resto é estrutural
 CODS_FICHA = frozenset({"tipo_fonte", "campos_abnt", "referencia_abnt"})
 
+# Integridade da SEQUÊNCIA de âncoras — absorvido de verificar_ancoras.py
+# quando a etapa Qualidade foi unificada (v3.16). Sempre AVISO: a presença
+# de âncora continua sendo o erro; a sequência é diagnóstico fino.
+_ANC_ROT = re.compile(r"\{\{p\.([0-9ivxlcdm]+)\}\}", re.IGNORECASE)
+
+
+def _avisos_integridade_ancoras(r, corpo):
+    achados = [a.lower() for a in _ANC_ROT.findall(corpo)]
+    if not achados:
+        return
+    vistos, dups = set(), set()
+    for a in achados:
+        (dups if a in vistos else vistos).add(a)
+    if dups:
+        r["avisos"].append(f"âncoras duplicadas: {sorted(dups)[:5]}")
+    arabicas = [int(a) for a in achados if a.isdigit()]
+    if arabicas:
+        fora = [(a, b) for a, b in zip(arabicas, arabicas[1:]) if b < a]
+        if fora:
+            r["avisos"].append(f"âncoras fora de ordem (ex.: {fora[:3]})")
+        faltando = sum(1 for n in range(min(arabicas), max(arabicas) + 1)
+                       if n not in set(arabicas))
+        if faltando:
+            r["avisos"].append(f"lacunas na sequência de âncoras "
+                               f"({faltando} pág. — pode ser normal: em branco/ilustração)")
+    if re.search(r"```[^`]*\{\{p\.", corpo, re.DOTALL):
+        r["avisos"].append("âncora dentro de bloco de código — verifique")
+
 
 def auditar(caminho: Path):
     texto = caminho.read_text(encoding="utf-8", errors="replace")
@@ -154,6 +182,7 @@ def auditar(caminho: Path):
                   "(reinjete com injetar_paginas.py sobre o PDF-fonte)")
         else:
             r["ok"].append(f"{n} âncoras de página")
+            _avisos_integridade_ancoras(r, corpo)
     elif tf:
         r["ancoras"] = "n/a"
         r["ok"].append("não exige âncora (cita-se por artigo/julgado)")
@@ -178,6 +207,24 @@ def auditar(caminho: Path):
             if devidos:
                 r["avisos"].append("dívida de migração ABNT — preencher: "
                                    + ", ".join(devidos))
+
+        # coerência do localizador e do sistema de chamada com o tipo —
+        # absorvido do validar_yaml_abnt (v3.16); AVISO, nunca erro
+        if tf:
+            esp_t, esp_a = taxonomia.TIPOS_FONTE[tf].localizador
+            lt = fm.get("localizador_tipo")
+            if esp_t and not vazio(lt):
+                if lt != esp_t:
+                    r["avisos"].append(f"localizador_tipo '{lt}' não bate com o "
+                                       f"tipo (esperado: '{esp_t}')")
+                elif (fm.get("localizador_abrev") or "") != esp_a:
+                    r["avisos"].append(f"localizador_abrev "
+                                       f"'{fm.get('localizador_abrev')}' não bate "
+                                       f"(esperado: '{esp_a}')")
+        sc = str(fm.get("sistema_chamada") or "").strip()
+        if sc and sc not in ("autor_data", "autor-data", "numerico", "ambos"):
+            r["avisos"].append(f"sistema_chamada inválido: '{sc}' "
+                               "(use autor_data | numerico | ambos)")
 
         if tf and not taxonomia.eh_abnt(tf):
             r["ok"].append("documento interno — fora do regime ABNT (sem referência)")

@@ -5,6 +5,31 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.16.0] — 2026-07-17 · Qualidade num card só · Publicar antecipa a prontidão · mestre pequeno publica
+
+### Alterado
+- **"Validar" e "Auditar" viraram um card só — "6 · Qualidade"**: um botão
+  roda o exame completo (âncoras + YAML + nota) num job único, grava o
+  RELATORIO e abre o relatório-triagem sozinho. As checagens exclusivas do
+  antigo Validar (âncoras duplicadas/fora de ordem/lacunas/em bloco de
+  código, localizador coerente com o tipo, sistema_chamada) foram
+  **absorvidas pelo auditor como avisos** — nada endureceu, nada se perdeu.
+  Trilho renumerado: Publicar→7, Auditar vault→8, Radar→9 (9 etapas + ✎).
+- **O card Publicar parou de mentir**: "2.058 prontos p/ publicar" era
+  contagem de arquivos, sem qualidade. Agora mostra a **prontidão real**
+  — "3 obra(s) prontas ✓ · 10 reprovadas → ✎ fichas · 1 desatualizadas →
+  refatie" — auditando só a camada-1 do 3-MARKDOWN-LIMPO (cache barato) e
+  detectando **bruto mais novo que o derivado** (ficha corrigida pede
+  refatiar) e **mestre fora do limpo**. O publicar em si já tinha as
+  travas; o card agora antecipa o que a Simulação diria.
+
+### Corrigido
+- **Mestre pequeno nunca chegava ao vault**: documento com < 4.000
+  palavras não era fatiado NEM copiado ao 3-MARKDOWN-LIMPO — ficava sem
+  rota de publicação (no acervo real: 13 mestres no bruto, só 11 obras no
+  limpo). O fatiar agora **copia inteiro** o que não fatia ("publica como
+  nota única").
+
 ## [3.15.0] — 2026-07-17 · Relatório de auditoria vira triagem em slideover
 
 ### Adicionado
