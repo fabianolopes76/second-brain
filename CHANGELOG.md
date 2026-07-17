@@ -5,6 +5,19 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.17.1] — 2026-07-17 · Parser da resposta de IA repara JSON defeituoso
+
+### Corrigido
+- **Resposta real do Gemini era rejeitada** ("não encontrei JSON válido"):
+  o título `"Taxes, revenues, and the "Laffer curve""` veio com **aspas
+  internas sem escape** — defeito clássico de saída de IA. O parser ganhou
+  um reparador por máquina de estados (aspa dentro de string só FECHA se
+  seguida de `, } ] :` — senão ganha escape; quebra de linha crua vira
+  `\n`), aplicado em segunda tentativa, sem tocar em JSON já válido.
+- Campo de lista (ex.: `area`) com valores mistos agora **mantém o
+  subconjunto válido** e avisa sobre os descartados — antes um único valor
+  fora do vocabulário derrubava o campo inteiro.
+
 ## [3.17.0] — 2026-07-17 · Fichas preenchidas por QUALQUER IA (validado e reversível) · Simulação com próximos passos
 
 ### Adicionado

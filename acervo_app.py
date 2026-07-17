@@ -1111,14 +1111,52 @@ def gerar_prompt_ia():
     return {"pendentes": len(blocos), "prompt": prompt}
 
 
+def _reparar_json(texto: str) -> str:
+    """Conserta defeitos CLÁSSICOS de JSON emitido por IA, sem tocar no
+    conteúdo válido: aspas internas sem escape (ex.: "the "Laffer curve"")
+    e quebras de linha cruas dentro de strings. Máquina de estados: dentro
+    de uma string, um `"` só FECHA se o próximo char útil for , } ] ou : —
+    senão é aspa interna e ganha escape."""
+    saida, dentro, i, n = [], False, 0, len(texto)
+    while i < n:
+        c = texto[i]
+        if not dentro:
+            if c == '"':
+                dentro = True
+            saida.append(c)
+        elif c == "\\" and i + 1 < n:
+            saida.append(c)
+            saida.append(texto[i + 1])
+            i += 1
+        elif c == "\n":
+            saida.append("\\n")
+        elif c == '"':
+            j = i + 1
+            while j < n and texto[j] in " \t\r\n":
+                j += 1
+            if j >= n or texto[j] in ",}]:":
+                dentro = False
+                saida.append(c)
+            else:
+                saida.append('\\"')      # aspa interna sem escape
+        else:
+            saida.append(c)
+        i += 1
+    return "".join(saida)
+
+
 def _extrair_json_ia(texto: str) -> dict:
-    """Aceita a resposta como vier: JSON puro, com cerca ```json``` ou com
-    prosa em volta — extrai o maior bloco {...} plausível."""
+    """Aceita a resposta como vier: JSON puro, com cerca ```json```, com
+    prosa em volta — e com os defeitos comuns de IA (aspas internas sem
+    escape, quebras de linha em strings), reparados em 2ª tentativa."""
     texto = texto.strip()
-    for candidato in (
-            texto,
-            re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.M),
-            texto[texto.find("{"): texto.rfind("}") + 1]):
+    candidatos = [
+        texto,
+        re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.M),
+        texto[texto.find("{"): texto.rfind("}") + 1],
+    ]
+    candidatos += [_reparar_json(c) for c in list(candidatos)]
+    for candidato in candidatos:
         try:
             d = json.loads(candidato)
             if isinstance(d, dict):
@@ -1175,11 +1213,15 @@ def aplicar_lote_ia(resposta: str):
             if k in vocab_de:
                 candidatos = ([x.strip() for x in val.split(";")]
                               if k == "area" else [val])
+                validos = [c for c in candidatos if c in vocab_de[k]]
                 fora = [c for c in candidatos if c not in vocab_de[k]]
                 if fora:
                     avisos.append(f"{nome}: {k} '{'; '.join(fora)}' fora do "
-                                  "vocabulário — ignorado")
+                                  "vocabulário — ignorado"
+                                  + (" (mantidos os válidos)" if validos else ""))
+                if not validos:
                     continue
+                val = "; ".join(validos)
             campos[k] = val
         if not campos:
             rejeitadas.append({"arquivo": nome,
