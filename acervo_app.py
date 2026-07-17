@@ -1131,10 +1131,25 @@ def _reparar_json(texto: str) -> str:
         elif c == "\n":
             saida.append("\\n")
         elif c == '"':
+            # FECHA só se o que vem depois é ESTRUTURA JSON de verdade:
+            #   "}  "]           → fecha sempre
+            #   ",  seguido de " { [ dígito t f n → próximo item/chave
+            #   ":  seguido de " { [ dígito t f n → valor de chave
+            # Senão é aspa interna de prosa (ex.: `o termo "Laffer", cunhado`)
+            # e ganha escape — antes, `",` fechava sempre e mutilava o resto.
             j = i + 1
             while j < n and texto[j] in " \t\r\n":
                 j += 1
-            if j >= n or texto[j] in ",}]:":
+            fecha = False
+            if j >= n or texto[j] in "}]":
+                fecha = True
+            elif texto[j] in ",:":
+                k2 = j + 1
+                while k2 < n and texto[k2] in " \t\r\n":
+                    k2 += 1
+                if k2 >= n or texto[k2] in '"{[-0123456789tfn':
+                    fecha = True
+            if fecha:
                 dentro = False
                 saida.append(c)
             else:
@@ -1197,18 +1212,21 @@ def aplicar_lote_ia(resposta: str):
         if not isinstance(campos_in, dict):
             rejeitadas.append({"arquivo": nome, "motivo": 'sem o objeto "campos"'})
             continue
-        campos = {}
+        campos, descartes = {}, []
         for k, val in campos_in.items():
             k = str(k).strip()
             if k not in _CAMPOS_IA and k != "confiabilidade":
                 avisos.append(f"{nome}: campo '{k}' não é aceito — ignorado")
+                descartes.append(f"{k} (nome não aceito)")
                 continue
             if val is None:
+                descartes.append(f"{k}=null")
                 continue
             if isinstance(val, list):
                 val = "; ".join(str(x) for x in val)
             val = str(val).strip()
             if not val:
+                descartes.append(f"{k} (vazio)")
                 continue
             if k in vocab_de:
                 candidatos = ([x.strip() for x in val.split(";")]
@@ -1220,12 +1238,19 @@ def aplicar_lote_ia(resposta: str):
                                   "vocabulário — ignorado"
                                   + (" (mantidos os válidos)" if validos else ""))
                 if not validos:
+                    descartes.append(f"{k} (fora do vocabulário)")
                     continue
                 val = "; ".join(validos)
             campos[k] = val
         if not campos:
+            # diagnóstico TRANSPARENTE: sem isso, "nenhum campo válido"
+            # não diz se a IA mandou tudo null, nomes errados ou vazios
+            detalhe = "; ".join(descartes[:8]) or "objeto campos vazio"
+            if len(descartes) > 8:
+                detalhe += f" … (+{len(descartes) - 8})"
             rejeitadas.append({"arquivo": nome,
-                               "motivo": "nenhum campo válido restou"})
+                               "motivo": f"nenhum campo válido restou — "
+                                         f"recebido: {detalhe}"})
             continue
         prontos.append((nome, p, campos))
 

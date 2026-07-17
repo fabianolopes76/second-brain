@@ -5,6 +5,21 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.17.2] — 2026-07-17 · Reparador de JSON v2 + rejeição com diagnóstico
+
+### Corrigido
+- **Aspa interna seguida de vírgula/dois-pontos na prosa mutilava a
+  resposta** (ex.: `o termo "Curva de Laffer", cunhado…` — o reparador
+  v1 tratava `",` como fim de string e o resto virava lixo estrutural,
+  derrubando as fichas seguintes com "nenhum campo válido restou").
+  Agora a aspa só fecha se o que vem depois é ESTRUTURA JSON de verdade
+  (`}`/`]`, ou `,`/`:` seguidos de chave/valor) — prosa com aspas e
+  pontuação passa inteira.
+- **Rejeição às cegas virou diagnóstico**: "nenhum campo válido restou"
+  agora lista o que chegou e por que caiu — `ano=null; titulo (vazio);
+  orgao (nome não aceito)` — dá para ver na hora se a IA mandou nulls,
+  nomes errados ou se a resposta veio mutilada.
+
 ## [3.17.1] — 2026-07-17 · Parser da resposta de IA repara JSON defeituoso
 
 ### Corrigido
