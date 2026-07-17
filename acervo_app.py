@@ -1383,8 +1383,13 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .sov-head{display:flex;align-items:center;gap:10px;padding:16px 18px;
   border-bottom:1px solid var(--line)}
 .sov-head h2{font-size:16px;margin:0;flex:1}
-.sov-head .fechar{border:1px solid var(--line);background:var(--surf2);
-  border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px}
+/* botões ← / ✕ dos painéis laterais e do modal ⓘ: glifo CENTRADO
+   (botão nativo com width/height fixos desalinha o caractere) */
+.fechar{border:1px solid var(--line);background:var(--surf2);color:var(--ink-2);
+  border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+  padding:0;line-height:1;flex-shrink:0}
+.fechar:hover{border-color:var(--burg);color:var(--burg)}
 .sov-body{padding:16px 18px;overflow-y:auto}
 .sov-dica{font-size:12.5px;color:var(--muted);margin:0 0 12px}
 .sover.fichas{width:min(580px,94vw)}

@@ -5,6 +5,13 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.13.1] — 2026-07-17 · Botões ← / ✕ com o ícone centrado
+
+### Corrigido
+- Os botões de **voltar (←)** e **fechar (✕)** dos painéis laterais — e o
+  ✕ do modal ⓘ, que estava sem estilo nenhum — agora centralizam o ícone
+  (flex + line-height 1) e ganham hover consistente.
+
 ## [3.13.0] — 2026-07-17 · Retomada sem perda · card ✎ Fichas no trilho · feedback que orienta
 
 ### Adicionado
