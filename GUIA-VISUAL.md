@@ -123,7 +123,7 @@ Depois da etapa 1, esta tabela mostra, para cada arquivo: idioma detectado, se p
 
 ### ✎ Fichas — o SEU passo do trilho (grupo QUALIDADE)
 
-Entre o Validar (6) e o Auditar (7) existe um card **sem número, com um lápis ✎**: é o único passo do trilho que é **trabalho seu**, não de script. O card mostra ao vivo quantas fichas precisam de você — **"3 corrigir · 5 conferir"** — e fica verde quando todas estão prontas. O botão **📋 Abrir fichas** abre a mesa de revisão, com tudo separado pelo que merece atenção:
+Entre o Validar (6) e o Auditar (7) existe um card **sem número, com um lápis ✎**: é o único passo do trilho que é **trabalho seu**, não de script. O card mostra ao vivo quantas fichas precisam de você e quantas você já resolveu — **"3 corrigir · 5 conferir · 4 prontas ✓"** — e fica verde quando todas estão prontas. O botão **📋 Abrir fichas** abre a mesa de revisão, com tudo separado pelo que merece atenção:
 
 - **✗ Corrigir** — bloqueiam a publicação (falta `tipo_fonte`, autoria, ementa…);
 - **⚠ Conferir** — o que a **automação atribuiu e espera a sua confirmação**: `tipo_fonte` que é palpite da triagem, `tipo` derivado automaticamente, status/confiabilidade `A-conferir`;

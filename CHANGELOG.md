@@ -5,6 +5,15 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.14.2] — 2026-07-17 · Card ✎ mostra as prontas — o progresso fica visível
+
+### Corrigido
+- O card ✎ exibia só "X corrigir · Y conferir": concluir uma ficha movia
+  o número de "conferir" para as prontas **invisíveis**, e o card parecia
+  parado ("12 corrigir · 0 conferir"). Agora o badge mostra o quadro
+  completo — "12 corrigir · 1 prontas ✓" — e o progresso aparece a cada
+  ficha resolvida (partes zeradas são omitidas; prontas, sempre exibidas).
+
 ## [3.14.1] — 2026-07-17 · Card ✎ atualiza NA HORA ao salvar/fechar a ficha
 
 ### Corrigido

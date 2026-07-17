@@ -2486,11 +2486,18 @@ function atualizarTrilho(p, temRoot){
   // 6 validar
   if(!p.bruto)          marcar('e6','bloq','converta antes','');
   else                  marcar('e6','ativa','pronto','');
-  // ✎ fichas — saneamento humano (contadores do resumo cacheado no servidor)
+  // ✎ fichas — saneamento humano (contadores do resumo cacheado no servidor).
+  // As PRONTAS aparecem sempre: é o que mostra o progresso — sem elas,
+  // "12 corrigir" parado esconde que uma ficha acabou de ficar pronta.
   const fi = p.fichas || {};
-  if(!p.bruto)          marcar('ef','bloq','converta antes','');
-  else if(fi.corrigir)  marcar('ef','ativa', fi.corrigir+' corrigir · '+fi.conferir+' conferir','pend');
-  else if(fi.conferir)  marcar('ef','ativa', fi.conferir+' conferir','pend');
+  if(!p.bruto){ marcar('ef','bloq','converta antes',''); }
+  else if(fi.corrigir || fi.conferir){
+    const partes = [];
+    if(fi.corrigir) partes.push(fi.corrigir+' corrigir');
+    if(fi.conferir) partes.push(fi.conferir+' conferir');
+    partes.push((fi.prontas||0)+' prontas ✓');
+    marcar('ef','ativa', partes.join(' · '),'pend');
+  }
   else                  marcar('ef','feito', (fi.prontas||0)+' prontas','ok');
   // 7 auditar
   if(!p.bruto)          marcar('e7','bloq','converta antes','');
