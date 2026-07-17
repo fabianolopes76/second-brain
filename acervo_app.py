@@ -136,6 +136,21 @@ def vault_destino(pasta: str = "") -> Path:
     return Path(CFG["root"]) / "4-OBSIDIAN-VAULT"
 
 
+def _lembrar_vault(pasta: str) -> str:
+    """Destino digitado numa ação de vault → vira o padrão persistente.
+
+    O caminho do vault definitivo vivia só no input transitório do card:
+    reiniciar o painel/navegador o esvaziava e o publicar seguinte ia, em
+    silêncio, para o 4-OBSIDIAN-VAULT de trabalho (incidente de 17/07).
+    Persistir no USO elimina a classe do erro sem pedir passo extra —
+    só pastas que EXISTEM são memorizadas (typo não vira padrão)."""
+    p = win_para_wsl(str(pasta)) if str(pasta or "").strip() else ""
+    if p and p != CFG.get("vault") and Path(p).is_dir():
+        CFG["vault"] = p
+        salvar_config()
+    return p
+
+
 # ---------------------------------------------------------------------------
 # Configuração persistente — reabrir o painel RETOMA de onde parou.
 # Precedência: args da CLI > config.json > defaults embutidos.
@@ -470,20 +485,54 @@ def progresso():
     return r
 
 
+# Pastas-produto do pipeline: nunca contêm PDF-fonte e concentram MILHARES
+# de arquivos — podá-las corta o grosso do custo (e do risco) da varredura
+# que o poll repete a cada 1,5 s sobre o 9p do WSL2.
+PASTAS_PRODUTO = {"2-MARKDOWN-BRUTO", "3-MARKDOWN-LIMPO", "4-OBSIDIAN-VAULT"}
+
+
 def contar_pdfs():
     if not CFG["root"] or not Path(CFG["root"]).is_dir():
         return 0
     n = 0
-    for p in Path(CFG["root"]).rglob("*"):
-        if p.suffix.lower() != ".pdf":
-            continue
-        if p.stem.endswith("_OCR"):
+    # os.walk com onerror: sob carga (Dropbox/OneDrive sincronizando), o
+    # /mnt/... pode falhar com ENOMEM/EIO transitório — pasta ilegível é
+    # pulada em vez de derrubar o poll inteiro.
+    for pasta, dirs, arqs in os.walk(CFG["root"], onerror=lambda e: None):
+        dirs[:] = [d for d in dirs
+                   if d not in PASTAS_PRODUTO and not d.startswith(".")]
+        nomes = set(arqs)
+        for a in arqs:
+            base, ext = os.path.splitext(a)
+            if ext.lower() != ".pdf":
+                continue
             # copia _OCR só é "saída" se o original ainda existe ao lado;
             # órfã (original apagado) conta como fonte, igual à triagem
-            if p.with_name(p.stem[:-4] + p.suffix).exists():
+            if base.endswith("_OCR") and (base[:-4] + ext) in nomes:
                 continue
-        n += 1
+            n += 1
     return n
+
+
+_ESTADO_BOM = None   # último retrato do disco servido com sucesso
+
+
+def _estado_json():
+    """Corpo do /api/estado, tolerante a falha transitória do disco.
+
+    Dropbox/OneDrive sincronizando uma publicação recém-feita sobrecarrega
+    o 9p do WSL2 e uma varredura pode morrer com ENOMEM no meio (incidente
+    de 17/07: traceback no terminal a cada poll). Falhou o disco → serve-se
+    o último retrato completo; o job vem SEMPRE fresco (vive em memória)."""
+    global _ESTADO_BOM
+    try:
+        disco = {"diag": diagnostico(), "csv": ler_csv(),
+                 "n_pdfs": contar_pdfs(), "prog": progresso()}
+        _ESTADO_BOM = disco
+    except OSError:
+        disco = _ESTADO_BOM or {"diag": [], "csv": [], "n_pdfs": 0,
+                                "prog": {"datas": {}, "fichas": {}, "pub": {}}}
+    return {"cfg": CFG, "job": JOB.snapshot(), **disco}
 
 
 # ---------------------------------------------------------------------------
@@ -1620,7 +1669,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/vault_preflight":
             q = parse_qs(u.query)
             return self._send(200, json.dumps(
-                verificar_vault(q.get("pasta", [""])[0]), ensure_ascii=False))
+                verificar_vault(_lembrar_vault(q.get("pasta", [""])[0])),
+                ensure_ascii=False))
         if u.path == "/api/ficha":
             q = parse_qs(u.query)
             p = _ficha_path(q.get("arq", [""])[0])
@@ -1658,14 +1708,7 @@ class Handler(BaseHTTPRequestHandler):
                 plano["_sugestao_bloqueada_por"] = bloqueio
             return self._send(200, json.dumps(plano, ensure_ascii=False))
         if u.path == "/api/estado":
-            return self._send(200, json.dumps({
-                "cfg": CFG,
-                "job": JOB.snapshot(),
-                "diag": diagnostico(),
-                "csv": ler_csv(),
-                "n_pdfs": contar_pdfs(),
-                "prog": progresso(),
-            }))
+            return self._send(200, json.dumps(_estado_json()))
         self._send(404, "{}")
 
     def do_POST(self):
@@ -1751,7 +1794,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(r, ensure_ascii=False))
 
         if u.path == "/api/vault_preparar":
-            r = preparar_vault(data.get("pasta", ""))
+            r = preparar_vault(_lembrar_vault(data.get("pasta", "")))
             return self._send(200, json.dumps(r, ensure_ascii=False))
 
         if u.path == "/api/moc_migrar":
@@ -1762,7 +1805,7 @@ class Handler(BaseHTTPRequestHandler):
             if not (nome.startswith("MOC-") and nome.endswith(".md")):
                 return self._send(200, json.dumps(
                     {"ok": False, "msg": f"arquivo inválido: {nome}"}))
-            vault = vault_destino(data.get("pasta", ""))
+            vault = vault_destino(_lembrar_vault(data.get("pasta", "")))
             gm = Path(CFG["scripts"]) / "gerar_moc.py"
             rcmd = subprocess.run(
                 ["python3", str(gm), str(vault),
@@ -1808,13 +1851,14 @@ class Handler(BaseHTTPRequestHandler):
             elif a == "validar":
                 ok, msg = acao_validar()
             elif a == "publicar":
-                ok, msg = acao_publicar(data.get("pasta", ""),
+                ok, msg = acao_publicar(_lembrar_vault(data.get("pasta", "")),
                                         dry=bool(data.get("dry", True)),
                                         force=bool(data.get("force", False)))
             elif a == "auditar_vault":
-                ok, msg = acao_auditar_vault(data.get("pasta", ""))
+                ok, msg = acao_auditar_vault(
+                    _lembrar_vault(data.get("pasta", "")))
             elif a == "radar":
-                ok, msg = acao_radar(data.get("pasta", ""),
+                ok, msg = acao_radar(_lembrar_vault(data.get("pasta", "")),
                                      aplicar=bool(data.get("aplicar", False)))
             else:
                 ok, msg = False, "Ação desconhecida."

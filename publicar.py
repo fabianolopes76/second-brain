@@ -90,11 +90,18 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     # é sobrescrito; o auditar_vault é o juiz), mas AVISA aqui, antes.
     stems_vault = {}
     if vault.is_dir():
-        for f_v in vault.rglob("*.md"):
-            if (f_v.name.startswith(("RELATORIO", "_"))
-                    or any(p in IGNORAR for p in f_v.parts)):
-                continue
-            stems_vault.setdefault(f_v.stem.casefold(), f_v.relative_to(vault))
+        try:
+            for f_v in vault.rglob("*.md"):
+                if (f_v.name.startswith(("RELATORIO", "_"))
+                        or any(p in IGNORAR for p in f_v.parts)):
+                    continue
+                stems_vault.setdefault(f_v.stem.casefold(),
+                                       f_v.relative_to(vault))
+        except OSError:
+            # 9p do WSL2 sob carga (Dropbox sincronizando): o aviso de
+            # ambiguidade fica incompleto, mas a publicação não morre por
+            # causa dele — o auditar_vault é o juiz definitivo.
+            stems_vault = {}
 
     resultado = Counter()
     detalhes = defaultdict(list)   # categoria → linhas p/ relatório
@@ -154,25 +161,34 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
                 "ou conviva e o auditar_vault acusará)")
 
         # ── idempotência + TRAVA 3: o vault vence ──
-        if alvo.exists():
-            if alvo.read_text(encoding="utf-8", errors="replace") == p["texto"]:
-                resultado["inalterado"] += 1
-                continue
-            if not force:
-                resultado["conflito"] += 1
-                detalhes["conflito"].append(
-                    f"{etiqueta} — difere do vault (curadoria?); "
-                    "use --force para republicar por cima")
-                continue
-            resultado["sobrescrito"] += 1
-            detalhes["sobrescrito"].append(etiqueta)
-        else:
-            resultado["publicado"] += 1
-            detalhes["publicado"].append(etiqueta)
-
-        if not dry:
-            alvo.parent.mkdir(parents=True, exist_ok=True)
-            alvo.write_text(p["texto"], encoding="utf-8")
+        # Tolerante a falha TRANSITÓRIA do disco (9p do WSL2 com Dropbox/
+        # OneDrive sincronizando): um arquivo que falha não aborta os 2000
+        # seguintes — re-rodar completa (o que copiou vira "inalterado").
+        try:
+            if alvo.exists():
+                if alvo.read_text(encoding="utf-8",
+                                  errors="replace") == p["texto"]:
+                    resultado["inalterado"] += 1
+                    continue
+                if not force:
+                    resultado["conflito"] += 1
+                    detalhes["conflito"].append(
+                        f"{etiqueta} — difere do vault (curadoria?); "
+                        "use --force para republicar por cima")
+                    continue
+                cat_escrita = "sobrescrito"
+            else:
+                cat_escrita = "publicado"
+            if not dry:
+                alvo.parent.mkdir(parents=True, exist_ok=True)
+                alvo.write_text(p["texto"], encoding="utf-8")
+        except OSError as e:
+            resultado["falha_disco"] += 1
+            detalhes["falha_disco"].append(
+                f"{etiqueta} — {e.strerror or e}")
+            continue
+        resultado[cat_escrita] += 1
+        detalhes[cat_escrita].append(etiqueta)
 
         # estatísticas do que entrou no vault
         for a in (fm.get("area") or []):
@@ -195,11 +211,11 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     print(f"\n{'='*72}\nPUBLICAÇÃO — {origem} → {vault}  ({modo})\n{'='*72}")
     LIMITE = 20
     for cat in ("publicado", "sobrescrito", "inalterado", "conflito",
-                "reprovado", "bloqueado", "retido"):
+                "reprovado", "bloqueado", "retido", "falha_disco"):
         if resultado[cat]:
             print(f"{cat:12}: {resultado[cat]}")
             for linha in detalhes[cat][:LIMITE]:
-                print(f"    {'✗' if cat in ('conflito','reprovado','bloqueado','retido') else '→'} {linha}")
+                print(f"    {'✗' if cat in ('conflito','reprovado','bloqueado','retido','falha_disco') else '→'} {linha}")
             excedente = len(detalhes[cat]) - LIMITE
             if excedente > 0:
                 print(f"    … e mais {excedente} — lista completa no RELATORIO-PUBLICACAO.md")
@@ -217,7 +233,7 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         L.append("| resultado | qtd |")
         L.append("|---|---|")
         for cat in ("publicado", "sobrescrito", "inalterado", "conflito",
-                    "reprovado", "bloqueado", "retido"):
+                    "reprovado", "bloqueado", "retido", "falha_disco"):
             if resultado[cat]:
                 L.append(f"| {cat} | {resultado[cat]} |")
         for eixo in ("area", "tipo", "status"):
@@ -227,9 +243,12 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         if a_conferir:
             L += ["", "## ⚠ Itens A-conferir (não citar sem revisão humana)", ""]
             L += [f"- {x}" for x in a_conferir]
-        for cat in ("conflito", "reprovado", "bloqueado", "retido"):
+        for cat in ("conflito", "reprovado", "bloqueado", "retido",
+                    "falha_disco"):
             if detalhes[cat]:
-                L += ["", f"## ✗ {cat.capitalize()}s", ""]
+                titulo = ("Falhas de disco (re-rode Publicar)"
+                          if cat == "falha_disco" else f"{cat.capitalize()}s")
+                L += ["", f"## ✗ {titulo}", ""]
                 L += [f"- {x}" for x in detalhes[cat]]
         if detalhes["ambiguidade"]:
             L += ["", "## ⚠ Ambiguidade de nome (wikilinks do Obsidian)", ""]
@@ -237,12 +256,20 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         L += ["", "> Publicação é COPIAR: 3-MARKDOWN-LIMPO segue como estágio de "
                   "trabalho. Em conflito, o vault vence (é onde vive a curadoria). "
                   "Depois de publicar, rode auditar_vault.py."]
-        vault.mkdir(parents=True, exist_ok=True)
-        (vault / "RELATORIO-PUBLICACAO.md").write_text("\n".join(L),
-                                                       encoding="utf-8")
-        print(f"\nRelatório: {vault / 'RELATORIO-PUBLICACAO.md'}")
+        try:
+            vault.mkdir(parents=True, exist_ok=True)
+            (vault / "RELATORIO-PUBLICACAO.md").write_text("\n".join(L),
+                                                           encoding="utf-8")
+            print(f"\nRelatório: {vault / 'RELATORIO-PUBLICACAO.md'}")
+        except OSError as e:
+            # incidente de 17/07: publicação sem relatório na raiz confunde
+            # o diagnóstico — falha de escrita aqui vira problema declarado
+            resultado["falha_disco"] += 1
+            print(f"\n! relatório NÃO gravado ({e.strerror or e}) — "
+                  "rode Publicar de novo para completar")
 
-    houve_problema = resultado["conflito"] + resultado["reprovado"] + resultado["bloqueado"]
+    houve_problema = (resultado["conflito"] + resultado["reprovado"]
+                      + resultado["bloqueado"] + resultado["falha_disco"])
     print(f"\n{'-'*72}")
     print(f"OK: {resultado['publicado'] + resultado['sobrescrito'] + resultado['inalterado']}"
           f"  |  problemas: {houve_problema}")
@@ -250,8 +277,12 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     # Simulação ASSERTIVA: qualidade e publicação andam juntas — o dry-run
     # diz exatamente O QUE fazer para chegar a 100%, na ordem do trilho.
     if resultado["reprovado"] or resultado["bloqueado"] or resultado["retido"] \
-            or resultado["conflito"]:
+            or resultado["conflito"] or resultado["falha_disco"]:
         print("\nPRÓXIMOS PASSOS para publicar 100%:")
+        if resultado["falha_disco"]:
+            print(f"  ✗ {resultado['falha_disco']} falha(s) de disco (Dropbox/"
+                  "OneDrive sincronizando?) → rode Publicar DE NOVO: o que já "
+                  "copiou fica (\"inalterado\") e só o que falta será gravado")
         if resultado["reprovado"]:
             print(f"  ✗ {resultado['reprovado']} REPROVADO(s) na auditoria → "
                   "complete a ficha (mesa ✎ Fichas) e REFATIE (etapa 5) — "

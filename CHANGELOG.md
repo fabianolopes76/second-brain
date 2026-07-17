@@ -5,6 +5,38 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.20.0] — 2026-07-17 · Destino memorizado no uso + resiliência ao disco sob carga
+
+Nascida de um incidente real: com o Dropbox sincronizando a publicação,
+o 9p do WSL2 falhou com `ENOMEM` e o painel imprimiu traceback a cada
+poll; pior, após reiniciar o painel o campo de destino (transitório)
+voltou vazio e o Publicar seguinte foi, **em silêncio**, para o
+`4-OBSIDIAN-VAULT` de trabalho em vez do vault definitivo.
+
+### Adicionado
+- **Destino memorizado no primeiro uso**: digitar a pasta do vault em
+  qualquer ação de destino (Publicar, Auditar vault, Radar, pré-voo 🧭,
+  preparo 🧱, migrar 🔁) grava o caminho no `config.json` — some a classe
+  de erro "publicou no vault errado depois de reiniciar". Só pastas que
+  existem viram padrão (typo não é memorizado); caminho Windows
+  (`C:\…`) é convertido; o campo mostra "(padrão: …)" com o destino real.
+- **`falha_disco` no publicar.py**: falha transitória de gravação num
+  arquivo não aborta mais o lote — recategoriza, segue os demais, sai no
+  console/relatório com a causa e retorna rc≠0 com a orientação "rode
+  Publicar de novo: o que copiou vira *inalterado*". Relatório que não
+  consegue ser gravado também vira problema declarado, não traceback.
+
+### Corrigido
+- **Poll `/api/estado` imune a `ENOMEM/EIO` do 9p**: falhou a varredura
+  do disco → serve o último retrato completo (o job vem sempre fresco,
+  vive em memória) em vez de derrubar a requisição com traceback.
+- **`contar_pdfs` 10× mais leve**: poda as pastas-produto
+  (`2-MARKDOWN-BRUTO`, `3-MARKDOWN-LIMPO`, `4-OBSIDIAN-VAULT` — milhares
+  de arquivos sem nenhum PDF-fonte) e tolera pasta ilegível via
+  `os.walk(onerror=…)`. Contagem idêntica à anterior (verificado no
+  acervo real); varredura do aviso de ambiguidade do publicar também
+  tolerante.
+
 ## [3.19.1] — 2026-07-17 · Migrar marcadores do MOC vira botão
 
 ### Adicionado
