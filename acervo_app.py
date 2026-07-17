@@ -947,6 +947,47 @@ def listar_fichas():
     return out
 
 
+def relatorio_auditoria(pasta: str = "") -> dict:
+    """Auditoria em forma de TRIAGEM para o slideover: do mais grave ao
+    irrelevante, cada item com a ação que o usuário deve tomar. Arquivos-
+    mestre saem classificados (fonte única: _classificar_ficha); fatias
+    são AGREGADAS por obra — 640 linhas iguais ninguém lê."""
+    alvo = Path(pasta) if pasta else Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
+    if not CFG["root"] or not alvo.is_dir():
+        return {"pasta": str(alvo), "itens": [], "fatias": [], "eh_bruto": False}
+    eh_bruto = (alvo.resolve()
+                == (Path(CFG["root"]) / "2-MARKDOWN-BRUTO").resolve())
+    itens, fatias = [], {}
+    for f in sorted(alvo.rglob("*.md")):
+        if f.name.startswith(("RELATORIO", "_")):
+            continue
+        try:
+            fm = frontmatter.ler(
+                f.read_text(encoding="utf-8", errors="replace")).campos
+            if not comum.vazio(fm.get("parte")) and not comum.vazio(fm.get("obra")):
+                # fatia: agrega por obra (nota da auditoria, não da ficha —
+                # fatia herda os metadados, o que pesa é âncora/estrutura)
+                r = _auditar_arquivo(f)
+                obra = comum.alvo_wikilink(fm.get("obra")) or f.stem.split("_p")[0]
+                g = fatias.setdefault(obra, {"obra": obra, "total": 0,
+                                             "reprovadas": 0, "parciais": 0,
+                                             "exemplo": ""})
+                g["total"] += 1
+                nt = _nota_auditoria(r)
+                if nt == "REPROVADO":
+                    g["reprovadas"] += 1
+                    g["exemplo"] = g["exemplo"] or (r.get("erros") or [""])[0]
+                elif nt == "PARCIAL":
+                    g["parciais"] += 1
+            else:
+                itens.append(_classificar_ficha(f))
+        except Exception:
+            continue
+    return {"pasta": str(alvo), "eh_bruto": eh_bruto, "itens": itens,
+            "fatias": sorted(fatias.values(),
+                             key=lambda g: -g["reprovadas"])}
+
+
 # Resumo das fichas para o card ✎ do trilho. O poll de /api/estado roda a
 # cada 1,5 s — auditar todos os md a cada poll seria caro (OneDrive/mnt).
 # Cache: chave barata (glob+stat, custo que o progresso() já paga); a
@@ -1100,6 +1141,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(_vocab(), ensure_ascii=False))
         if u.path == "/api/fichas":
             return self._send(200, json.dumps(listar_fichas(), ensure_ascii=False))
+        if u.path == "/api/auditoria":
+            q = parse_qs(u.query)
+            return self._send(200, json.dumps(
+                relatorio_auditoria(q.get("pasta", [""])[0]), ensure_ascii=False))
         if u.path == "/api/ficha":
             q = parse_qs(u.query)
             p = _ficha_path(q.get("arq", [""])[0])
@@ -1760,6 +1805,7 @@ tr:hover td{background:var(--surf2)}
           <span class="st" id="s7">—</span>
           <div class="acoes">
             <button class="bnav" onclick="abrirNav('audp','dir')">📁</button>
+            <button onclick="abrirAuditoria()" title="triagem do que a auditoria achou: do grave ao irrelevante, com a ação de cada item">📄 Relatório</button>
             <button data-a class="primary" onclick="acao('auditar',{pasta:audp.value})">Auditar</button>
           </div>
         </div>
@@ -1865,6 +1911,18 @@ tr:hover td{background:var(--surf2)}
         <button class="primary" onclick="salvarFicha()" style="flex:1">💾 Salvar e revalidar</button>
       </div>
     </div>
+  </div>
+</aside>
+
+<!-- SLIDEOVER · RELATÓRIO DE AUDITORIA -->
+<div class="sov-bg" id="asovBg" onclick="fecharAuditoria()"></div>
+<aside class="sover fichas" id="asov" aria-label="Relatório de auditoria">
+  <div class="sov-head">
+    <h2 id="asovTit" style="font-size:14px">📄 Auditoria — triagem</h2>
+    <button class="fechar" onclick="fecharAuditoria()" title="fechar (Esc)">✕</button></div>
+  <div class="sov-body">
+    <p class="sov-dica" id="asovInfo">carregando…</p>
+    <div id="asovItens"></div>
   </div>
 </aside>
 
@@ -2148,7 +2206,7 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); }
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); }
 });
 
 /* ---------- modal "o que faz esta etapa" ---------- */
@@ -2187,7 +2245,8 @@ const INFO = {
   s:'Os próprios <code>.md</code> do <code>2-MARKDOWN-BRUTO</code>, corrigidos campo a campo. Depois de mexer nas fichas, <b>refatie</b> (etapa 5) — as fatias herdam.'},
  e7:{t:'7 · Auditar — a nota final de cada arquivo',
   o:'Responde à pergunta "isto <b>serve</b> ao segundo cérebro?": cruza ficha, âncoras e conteúdo e dá a cada arquivo uma nota — <b>PRONTO</b>, <b>PARCIAL</b> (avisos) ou <b>REPROVADO</b> (corrigir antes de publicar; a etapa 8 recusa reprovados).',
-  a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
+  a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>. Ao terminar, o relatório-triagem abre sozinho no painel lateral.'],
+     ['📄 Relatório','abre a <b>triagem</b> do que a auditoria achou, do mais grave ao irrelevante: ✗ GRAVES (bloqueiam a publicação, com a AÇÃO e o atalho ✎ para corrigir a ficha na hora), ⚠ CONFERIR (decisão sua pendente), avisos irrelevantes para publicar, ✓ OK — e as fatias agregadas por obra.'],
      ['📁','escolhe outra pasta para auditar.']],
   s:'<code>RELATORIO-AUDITORIA.md</code> com as pendências. O refino fino (autor, resumo) é trabalho do Projeto Claude — Fase 3c do WORKFLOW.'},
  e8:{t:'8 · Publicar — o conteúdo chega ao vault',
@@ -2398,6 +2457,74 @@ function fecharFicha(){
   fsovBg.classList.remove('on'); fsov.classList.remove('on');
   estado();   // contadores do card ✎ atualizados ao sair da mesa
 }
+
+/* ---------- relatório de auditoria: triagem do grave ao irrelevante ---------- */
+async function abrirAuditoria(){
+  asovBg.classList.add('on'); asov.classList.add('on');
+  asovInfo.textContent = 'auditando cada arquivo…';
+  asovItens.innerHTML = '';
+  const pasta = (typeof audp !== 'undefined' && audp.value) ? audp.value : '';
+  const d = await (await fetch('/api/auditoria?pasta='+encodeURIComponent(pasta))).json();
+  if(!d.itens.length && !d.fatias.length){
+    asovInfo.textContent = 'Nada para auditar em ' + d.pasta + ' — converta antes (etapa 3).';
+    return;
+  }
+  const graves   = d.itens.filter(f=>f.grupo==='corrigir');
+  const atencao  = d.itens.filter(f=>f.grupo==='conferir');
+  const soAvisos = d.itens.filter(f=>f.grupo==='pronta' && (f.avisos||[]).length);
+  const limpos   = d.itens.filter(f=>f.grupo==='pronta' && !(f.avisos||[]).length);
+  asovInfo.innerHTML = `<b>${d.itens.length}</b> arquivo(s)-mestre — ` +
+    `<span style="color:var(--err)">${graves.length} graves</span> · ` +
+    `<span style="color:var(--warn)">${atencao.length} p/ conferir</span> · ` +
+    `${soAvisos.length} só avisos · <span style="color:var(--ok)">${limpos.length} ok</span>` +
+    (d.fatias.length ? ` · ${d.fatias.length} obra(s) fatiadas` : '');
+  const acaoDe = f => {
+    const a = [];
+    if(f.faltam_campos.length)
+      a.push(`preencha <b>${f.faltam_campos.map(esc).join(', ')}</b>`);
+    f.erros_ficha.forEach(e=>{
+      if(/tipo_fonte/.test(e)) a.push('defina o <b>tipo_fonte</b>');
+      else if(/referencia_abnt/.test(e)) a.push('complete a ficha — a referência é gerada ao salvar');
+    });
+    const como = d.eh_bruto
+      ? ` → <button class="bnav" onclick="editarDaAuditoria(${q(f.arquivo)})">✎ Corrigir ficha</button>`
+      : ' → corrija o mestre no <b>2-MARKDOWN-BRUTO</b> (mesa ✎) e refatie (etapa 5)';
+    return a.length ? `<br><span class="err">AÇÃO: ${[...new Set(a)].join('; ')}</span>${como}` : '';
+  };
+  const item = (f, nivel) => `<div class="fitem">
+      <div class="fnome"><span>${esc(f.arquivo)}</span><span class="pill ${nivel}">${esc(f.nota)}</span></div>
+      <div class="fdet">
+        ${f.erros_ficha.map(e=>`<span class="err">✗ ${esc(e)}</span>`).join('<br>')}
+        ${acaoDe(f)}
+        ${f.pendencias_outras_etapas.map(p=>p.resolvida
+            ? `<br><span class="pok">✓ ${esc(p.msg.split(' — ')[0].split('.')[0])} — ${esc(p.orientacao)}</span>`
+            : `<br><span class="rev">⤳ AÇÃO: ${esc(p.msg.split(' — ')[0])} — ${esc(p.orientacao)}</span>`).join('')}
+        ${f.revisar.length?`<br><span class="rev">⚠ confirme: ${f.revisar.map(esc).join(' · ')}</span>`:''}
+        ${(f.avisos||[]).length?`<br><span style="opacity:.7">irrelevante p/ publicar: ${f.avisos.map(esc).join(' · ')}</span>`:''}
+      </div></div>`;
+  const grupo = (t, cls, arr, nivel) => arr.length
+    ? `<div class="fgrupo ${cls}">${t} (${arr.length})</div>` + arr.map(f=>item(f, nivel)).join('') : '';
+  const fat = d.fatias.length
+    ? `<div class="fgrupo">Fatias, por obra (${d.fatias.length})</div>` + d.fatias.map(g=>`
+        <div class="fitem"><div class="fnome"><span>${esc(g.obra)}</span>
+          <span class="pill ${g.reprovadas?'no':'ok'}">${g.total} fatias</span></div>
+        <div class="fdet">${g.reprovadas
+            ? `<span class="err">✗ ${g.reprovadas} reprovada(s) — ${esc(g.exemplo)}</span><br><span class="err">AÇÃO: corrija a ficha do mestre (mesa ✎) e refatie (etapa 5) — as fatias herdam</span>`
+            : `<span class="pok">✓ nenhuma reprovada</span>`}${g.parciais?` · <span style="opacity:.7">${g.parciais} com avisos</span>`:''}</div></div>`).join('')
+    : '';
+  asovItens.innerHTML =
+      grupo('✗ GRAVE — bloqueiam a publicação', 'err', graves, 'no')
+    + grupo('⚠ CONFERIR — decisão sua pendente', 'warn', atencao, 'sim')
+    + grupo('Só avisos — irrelevantes para publicar', '', soAvisos, 'ok')
+    + grupo('✓ OK — nada a fazer', 'ok', limpos, 'ok')
+    + fat;
+}
+function fecharAuditoria(){ asovBg.classList.remove('on'); asov.classList.remove('on'); }
+function editarDaAuditoria(arq){
+  fecharAuditoria();
+  fsovBg.classList.add('on'); fsov.classList.add('on');
+  abrirFicha(arq);
+}
 /* Trava de reexecução: refazer uma etapa CONCLUÍDA reprocessa e pode
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
@@ -2454,6 +2581,8 @@ function renderProg(j){
   const st = document.getElementById('s'+cardId.slice(1));
   if(st){ st.textContent = '⏳ executando'; st.className = 'st pend'; }
 }
+
+let JOB_RODANDO = false;   // detecta a transição rodando→terminou (auto-abrir relatório)
 
 /* ---------- trilho: estado de cada etapa ---------- */
 function marcar(id, estadoEt, texto, classe){
@@ -2536,6 +2665,11 @@ async function estado(){
   bPdf.textContent = s.n_pdfs + ' PDFs';
 
   const j = s.job;
+  // auditoria concluída → o relatório-triagem abre sozinho no slideover
+  if(JOB_RODANDO && !j.running && j.action === 'auditar' && j.rc !== null){
+    abrirAuditoria();
+  }
+  JOB_RODANDO = j.running;
   bJob.textContent = j.running ? '⏳ ' + j.name : (j.rc===null?'ocioso':'concluído');
   bJob.className = 'badge ' + (j.running ? 'run' : (j.rc===null?'':'on'));
   jobName.textContent = j.name || 'nenhuma tarefa';

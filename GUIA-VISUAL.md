@@ -106,7 +106,7 @@ MANUTENÇÃO
 4. **Limpar** — conserta o que o OCR quebrou (palavras hifenizadas, cabeçalhos repetidos). Mecânico, de graça.
 5. **Fatiar** — divide livros grandes em fatias de leitura rápida + uma nota-índice. É o formato que a IA consome bem.
 6. **Validar** — confere que nenhuma âncora se perdeu e que a ficha (autor, editora, ano…) está completa **para o tipo** (livro exige página; lei não).
-7. **Auditar** — dá a nota de cada arquivo: **PRONTO** (serve ao cérebro), **PARCIAL** (avisos) ou **REPROVADO** (corrigir antes de usar).
+7. **Auditar** — dá a nota de cada arquivo: **PRONTO** (serve ao cérebro), **PARCIAL** (avisos) ou **REPROVADO** (corrigir antes de usar). Ao terminar, o **relatório-triagem abre sozinho** num painel lateral: ✗ graves com a **ação** de cada item (e atalho ✎ para corrigir a ficha na hora), ⚠ para conferir, avisos irrelevantes para publicar e ✓ ok — fatias agregadas por obra. Reabra quando quiser pelo botão **📄 Relatório**.
 8. **Publicar** — distribui o material pronto nas pastas certas do vault (doutrina por área, legislação, jurisprudência…). **Clique "Simular" primeiro** para ver o plano sem gravar. Notas reprovadas não entram; notas que você editou à mão no Obsidian **não são sobrescritas**.
 9. **Auditar vault** — verifica as *ligações* do cérebro: fatia órfã, link quebrado, nota que "sumiu" dos painéis por erro de preenchimento.
 10. **Radar** — cruza as novidades (leis alteradas, novos julgados — coletadas pelo assistente de IA na pasta `Radar/`) com as notas do seu acervo que as citam, e monta a **fila de revisão**. "Sinalizar A-conferir" marca as notas afetadas para você revisar — **a decisão de reclassificar é sempre sua**.

@@ -5,6 +5,23 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.15.0] — 2026-07-17 · Relatório de auditoria vira triagem em slideover
+
+### Adicionado
+- **📄 Relatório no card 7·Auditar**: abre um painel lateral com a
+  auditoria em forma de **triagem**, do mais grave ao irrelevante:
+  **✗ GRAVE** (bloqueiam a publicação — cada item com a **AÇÃO** a tomar
+  e o atalho **✎ Corrigir ficha**, que abre a mesa direto naquele
+  arquivo), **⚠ CONFERIR** (decisão humana pendente), **avisos
+  irrelevantes para publicar** e **✓ OK**. Fatias são **agregadas por
+  obra** (631 reprovadas do mesmo livro = 1 linha, com a ação "corrija o
+  mestre e refatie"). O painel também abre **sozinho** quando o job
+  Auditar termina.
+- API `GET /api/auditoria?pasta=` — mesma classificação-fonte-única das
+  fichas (`_classificar_ficha`), com agregação de fatias; funciona para
+  qualquer pasta (bruto, 3-MARKDOWN-LIMPO…); fora do bruto, a ação
+  orienta corrigir o mestre em vez de oferecer o atalho ✎.
+
 ## [3.14.3] — 2026-07-17 · Seletores da ficha não descartam mais a escolha
 
 ### Corrigido
