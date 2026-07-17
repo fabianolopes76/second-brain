@@ -30,6 +30,7 @@ import re
 import sys
 from pathlib import Path
 
+import comum
 import frontmatter
 
 ANCORA = re.compile(r"\{\{p\.([0-9ivxlcdm]+)\}\}", re.I)
@@ -155,7 +156,7 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
         return 0
 
     destino.mkdir(parents=True, exist_ok=True)
-    prefixo = re.sub(r"[^\w\-]+", "-", arq.stem)[:60].strip("-")
+    prefixo = comum.prefixo_fatia(arq.stem)
 
     n_anc_orig = len(ANCORA.findall(corpo))
     n_anc_fat = 0
@@ -199,6 +200,17 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
         print(f"✗ {arq.name}: ÂNCORAS PERDIDAS ({n_anc_orig} → {n_anc_fat})",
               file=sys.stderr)
         return 0
+
+    # RETOMADA: refatiamento com MENOS fatias deixava as _pNN altas do
+    # fatiamento anterior órfãs no destino (fatias fantasma nos MOCs).
+    # fullmatch com o prefixo escapado: "Livro_p14" nunca casa "Livro-Vol2_p14";
+    # o _INDICE nunca casa. Roda só APÓS a trava — fatiamento falho não apaga.
+    padrao_velho = re.compile(re.escape(prefixo) + r"_p(\d{2,})\.md")
+    for velho in sorted(destino.glob(f"{prefixo}_p*.md")):
+        m = padrao_velho.fullmatch(velho.name)
+        if m and int(m.group(1)) > len(fatias):
+            velho.unlink()
+            print(f"    removida fatia órfã do fatiamento anterior: {velho.name}")
 
     # ---- nota-índice (camada 1) ----
     idx = ["---"]

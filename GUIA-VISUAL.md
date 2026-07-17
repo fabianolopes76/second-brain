@@ -44,6 +44,8 @@ O painel tem 4 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 3. Selecione a pasta e clique **Definir**.
 
 > **Clicou em "Definir" sem escolher a pasta?** Aparece uma advertência em vermelho logo abaixo do campo — ela some sozinha assim que você escolhe (ou digita) a pasta.
+>
+> **A configuração fica lembrada** (v3.13+): ao reabrir o painel, a pasta do acervo e o idioma voltam sozinhos — retome de onde parou sem redefinir nada.
 
 Os outros campos (Scripts, venv, Idioma) já vêm preenchidos — só mexa se o suporte orientar. O idioma padrão é **auto**: cada obra é detectada e OCRizada na língua certa (pt/en/de/fr/it/es).
 
@@ -87,6 +89,7 @@ PREPARO (mecânico, sem IA)
   (5) Fatiar           [Fatiar]                  → livro grande → índice + fatias
 QUALIDADE
   (6) Validar          [Validar]                 → âncoras + ficha ABNT completa?
+  (✎) Fichas           [📋 Abrir fichas]         → SEU passo: corrigir e confirmar as fichas
   (7) Auditar          [Auditar]                 → nota final: PRONTO/PARCIAL/REPROVADO
 PUBLICAÇÃO
   (8) Publicar         [Simular] [Publicar]      → leva o resultado ao vault do Obsidian
@@ -118,15 +121,20 @@ Depois da etapa 1, esta tabela mostra, para cada arquivo: idioma detectado, se p
 - `A-conferir (palpite: media)` — confiança média: vale conferir.
 - `A-conferir (indeterminado)` — o sistema **não chutou** (é assim que se evita que uma lei vire "livro" por engano). Classifique você.
 
-### 📋 Fichas — a mesa de revisão (botão no grupo QUALIDADE do trilho)
+### ✎ Fichas — o SEU passo do trilho (grupo QUALIDADE)
 
-Ao lado do botão "Validar" (etapa 6) mora o **📋 Fichas**: ele abre um painel lateral com **todas as fichas** do `2-MARKDOWN-BRUTO`, já separadas pelo que merece a sua atenção:
+Entre o Validar (6) e o Auditar (7) existe um card **sem número, com um lápis ✎**: é o único passo do trilho que é **trabalho seu**, não de script. O card mostra ao vivo quantas fichas precisam de você — **"3 corrigir · 5 conferir"** — e fica verde quando todas estão prontas. O botão **📋 Abrir fichas** abre a mesa de revisão, com tudo separado pelo que merece atenção:
 
-- **✗ Corrigir** — fichas REPROVADAS, que bloqueiam a publicação (falta `tipo_fonte`, autoria, ementa…);
+- **✗ Corrigir** — bloqueiam a publicação (falta `tipo_fonte`, autoria, ementa…);
 - **⚠ Conferir** — o que a **automação atribuiu e espera a sua confirmação**: `tipo_fonte` que é palpite da triagem, `tipo` derivado automaticamente, status/confiabilidade `A-conferir`;
 - **✓ Prontas** — completas, nada a fazer.
 
-Para ajustar ou confirmar: **✎ Editar** → o formulário abre com exatamente os campos que aquele `tipo_fonte` exige (livro pede editora; lei pede ementa e nº da norma), com vocabulários em seletores — impossível digitar valor inválido. **💾 Salvar e revalidar** roda a validação na hora e mostra o que ainda falta; a **referência ABNT** ninguém digita à mão — clique em *↳ usar a sugestão*. A seta **←** volta à lista, já atualizada.
+Para ajustar ou confirmar: **✎ Editar** → o formulário abre com exatamente os campos que aquele `tipo_fonte` exige. Os **obrigatórios têm asterisco** `*`, e os obrigatórios **ainda vazios ficam em vermelho** — preencheu, o vermelho some. **💾 Salvar e revalidar** responde em **dois quadros**:
+
+1. **Ficha** — o que ainda falta *neste formulário* ("preencha: autoria, ementa — destacados abaixo") ou ✓ completa;
+2. **Outras etapas** — o que **não se resolve aqui** e para onde vai: ex. *"arquivo gigante ⤳ resolve-se na etapa 5 — Fatiar"*; e se as fatias **já existem**, aparece como **✓ resolvido** ("o mestre fica inteiro por design") em vez de assustar.
+
+A **referência ABNT** ninguém digita à mão: quando a ficha está completa, o painel mostra a sugestão montada dela — *↳ usar a sugestão*. Com campos obrigatórios vazios a sugestão **não aparece** (sairia mutilada) e o painel diz o que falta para liberá-la.
 
 > Campo deixado **em branco não mexe** no arquivo. O mestre é o `2-MARKDOWN-BRUTO`: depois de corrigir, **refatie** (etapa 5) para as fatias herdarem a ficha.
 
@@ -181,6 +189,8 @@ Toda semana: **(10) Radar → Fila de revisão**, despache os itens marcados, e 
 | Publicar: `tipo '(vazio)' sem pasta de publicação` | A nota não tem o campo `tipo` — sem ele não há rota nem painel no MOC. Rode **Normalizar** (etapa 5): ele deriva o `tipo` do tipo_fonte quando não há ambiguidade. O que sobrar (índice REPROVADO, ficha vazia) é o **refino da Fase 3c** — preencha a ficha do índice no Projeto Claude e publique de novo. |
 | Publicar: `N fatia(s) retidas com o índice` | Proposital: fatia sem índice nasceria órfã no vault. Resolva o índice da obra (a razão está na mesma linha) e as fatias entram junto na próxima publicação. |
 | Apaguei o `controle.csv` e as pastas geradas para reprocessar do zero, e a conversão não roda | Rode **(1) Analisar** de novo (o trilho recomeça do disco). Se você também apagou os PDFs **originais** e deixou só as cópias `_OCR.pdf`, atualize para a **v3.11.1+**: antes a triagem ignorava a cópia órfã e ela sumia do pipeline. |
+| Parei no meio do trabalho — como retomo sem perder nada? | Feche o painel sem medo: na **v3.13+** a pasta do acervo fica **lembrada** (não precisa redefinir ao reabrir) e o trilho relê o disco para saber onde você está. **"Converter pasta" pula quem já foi convertido** — suas fichas corrigidas ficam intactas (reconverter é opt-in, via checkbox). Refatiar também limpa fatias antigas que sobrariam. |
+| Ao salvar a ficha aparece "arquivo gigante — FATIE" | A partir da **v3.13** isso vem no quadro **"Outras etapas"**, separado da ficha: não se resolve no formulário. Se você **já fatiou** (etapa 5), aparece como ✓ resolvido — o arquivo-mestre fica inteiro por design. |
 
 ---
 

@@ -117,7 +117,8 @@
       "Bash(python3 -m json.tool)",
       "Bash(curl -s -X POST http://localhost:8887/api/ficha -H 'Content-Type: application/json' -d '{\"arquivo\":\"../../../etc/passwd\",\"campos\":{\"tipo\":\"X\"}}')",
       "Bash(pkill -f \"acervo_app.py --port 8887\")",
-      "Bash(awk '{print $NF}')"
+      "Bash(awk '{print $NF}')",
+      "Bash(python3 auditar_acervo.py corpus --detalhado --relatorio /tmp/claude-1000/-home-fabiano-projects-second-brain/60a62747-a533-4b1a-958a-399e7952dd61/scratchpad/rel-aud-novo.md)"
     ]
   }
 }

@@ -5,6 +5,39 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.13.0] — 2026-07-17 · Retomada sem perda · card ✎ Fichas no trilho · feedback que orienta
+
+### Adicionado
+- **Configuração persistente** (`~/.config/acervo/config.json`): reabrir o
+  painel retoma a pasta do acervo e o idioma de onde parou. Precedência:
+  argumentos da CLI > config salvo > padrões embutidos.
+- **Card ✎ Fichas no trilho** (grupo Qualidade, entre 6·Validar e
+  7·Auditar, sem renumerar nada): o passo HUMANO do pipeline, com estado
+  próprio e contadores ao vivo ("3 corrigir · 5 conferir" → verde quando
+  tudo pronto). Contadores servidos por cache (só reaudita quando um
+  markdown do bruto muda — o poll de 1,5 s continua barato).
+- **Formulário orientado**: campos obrigatórios com asterisco, obrigatório
+  vazio em vermelho (some ao preencher); resposta do salvar em **dois
+  quadros** — "Ficha" (o que falta AQUI) e "Outras etapas" (o que não se
+  resolve no formulário, com a etapa certa; *arquivo gigante* com fatias
+  já geradas aparece como ✓ resolvido: o mestre fica inteiro por design).
+- `auditar_acervo.py`: códigos estáveis de erro (`erros_cod`, em lockstep
+  com as mensagens — saída de console/relatório intocada) e `nota_ficha()`
+  (reprova só o que se corrige na ficha). `comum.prefixo_fatia()` vira a
+  fonte única do slug de fatias.
+
+### Corrigido
+- **"Converter pasta" sobrescrevia markdowns já convertidos** — inclusive
+  fichas corrigidas à mão. Agora pula quem já existe ("PULADO — ficha
+  preservada"); reconverter é **opt-in** por checkbox no card, com o aviso
+  do que será perdido.
+- **Refatiar deixava fatias órfãs**: fatiamento novo com menos fatias não
+  removia as `_pNN` altas do anterior — ficavam como fatias-fantasma nos
+  MOCs. Agora o fatiar remove o excedente (só após a trava de âncoras).
+- **Sugestão de referência ABNT mutilada**: era oferecida mesmo com
+  autoria/campos obrigatórios vazios (saía ". 6.298, de …"). Agora só
+  aparece com a ficha completa — e o painel diz o que falta para liberá-la.
+
 ## [3.12.0] — 2026-07-16 · Fichas viram mesa de revisão no grupo Qualidade
 
 ### Alterado

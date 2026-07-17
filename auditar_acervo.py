@@ -76,17 +76,30 @@ def sinais_de_ocr_sujo(corpo):
     return problemas
 
 
+def _erro(r, cod, msg):
+    """Um erro, DOIS appends em lockstep: a mensagem humana (relatório e
+    console, intocados) e o código estável em erros_cod — é por ele que a
+    mesa de Fichas separa "corrige-se na ficha" de "resolve-se em outra etapa"."""
+    r["erros"].append(msg)
+    r["erros_cod"].append(cod)
+
+
+# códigos cujo conserto é NA FICHA (formulário); o resto é estrutural
+CODS_FICHA = frozenset({"tipo_fonte", "campos_abnt", "referencia_abnt"})
+
+
 def auditar(caminho: Path):
     texto = caminho.read_text(encoding="utf-8", errors="replace")
     fm, corpo = ler_frontmatter(texto)
     palavras = len(corpo.split())
 
     r = {"arquivo": caminho.name, "palavras": palavras,
-         "erros": [], "avisos": [], "ok": []}
+         "erros": [], "erros_cod": [], "avisos": [], "ok": []}
 
     # 1. frontmatter
     if not fm:
-        r["erros"].append("SEM frontmatter YAML — a IA não tem metadados para filtrar")
+        _erro(r, "sem_frontmatter",
+              "SEM frontmatter YAML — a IA não tem metadados para filtrar")
         return r
     r["ok"].append("frontmatter presente")
 
@@ -99,10 +112,10 @@ def auditar(caminho: Path):
     # 2. tipo_fonte
     tf = fm.get("tipo_fonte")
     if vazio(tf):
-        r["erros"].append("tipo_fonte ausente — sem ele não se sabe como citar")
+        _erro(r, "tipo_fonte", "tipo_fonte ausente — sem ele não se sabe como citar")
         tf = None
     elif tf not in taxonomia.TIPOS_FONTE:
-        r["erros"].append(f"tipo_fonte inválido: '{tf}'")
+        _erro(r, "tipo_fonte", f"tipo_fonte inválido: '{tf}'")
         tf = None
     else:
         r["ok"].append(f"tipo_fonte: {tf}")
@@ -136,8 +149,9 @@ def auditar(caminho: Path):
             r["avisos"].append("fatia sem âncora — trecho curto entre duas páginas; "
                                "cite pela âncora da fatia anterior")
         elif n == 0:
-            r["erros"].append("SEM âncoras de localização — NÃO É CITÁVEL em peça "
-                              "(reinjete com injetar_paginas.py sobre o PDF-fonte)")
+            _erro(r, "sem_ancoras",
+                  "SEM âncoras de localização — NÃO É CITÁVEL em peça "
+                  "(reinjete com injetar_paginas.py sobre o PDF-fonte)")
         else:
             r["ok"].append(f"{n} âncoras de página")
     elif tf:
@@ -157,7 +171,7 @@ def auditar(caminho: Path):
             # migração (TOLERADOS na taxonomia) vira aviso até o backlog zerar.
             faltam = [c for c in taxonomia.campos_bloqueantes(tf) if vazio(fm.get(c))]
             if faltam:
-                r["erros"].append(f"campos ABNT vazios: {', '.join(faltam)}")
+                _erro(r, "campos_abnt", f"campos ABNT vazios: {', '.join(faltam)}")
             else:
                 r["ok"].append("campos ABNT completos")
             devidos = [c for c in taxonomia.campos_tolerados(tf) if vazio(fm.get(c))]
@@ -168,7 +182,8 @@ def auditar(caminho: Path):
         if tf and not taxonomia.eh_abnt(tf):
             r["ok"].append("documento interno — fora do regime ABNT (sem referência)")
         elif vazio(fm.get("referencia_abnt")):
-            r["erros"].append("referencia_abnt vazia — sem ela não se monta a nota de rodapé")
+            _erro(r, "referencia_abnt",
+                  "referencia_abnt vazia — sem ela não se monta a nota de rodapé")
         else:
             r["ok"].append("referência ABNT presente")
 
@@ -182,8 +197,9 @@ def auditar(caminho: Path):
 
     # 8. fatiamento
     if palavras > PALAVRAS_GRAVE:
-        r["erros"].append(f"arquivo gigante ({palavras:,} palavras) — FATIE. "
-                          "Um só arquivo assim degrada a IA e estoura tokens")
+        _erro(r, "gigante",
+              f"arquivo gigante ({palavras:,} palavras) — FATIE. "
+              "Um só arquivo assim degrada a IA e estoura tokens")
     elif palavras > PALAVRAS_ALERTA:
         r["avisos"].append(f"arquivo longo ({palavras:,} palavras) — considere fatiar")
     elif palavras > 0:
@@ -204,6 +220,18 @@ def nota(r):
     if r["erros"]:
         return "REPROVADO"
     if r["avisos"]:
+        return "PARCIAL"
+    return "PRONTO"
+
+
+def nota_ficha(r, estruturais_pendentes: bool) -> str:
+    """Nota FICHA-cêntrica: reprova só o que se corrige no formulário.
+    Erro estrutural (gigante/âncoras) reprova o ARQUIVO na auditoria geral,
+    mas na mesa de Fichas vira pendência encaminhada — se ainda pendente,
+    rebaixa a PARCIAL; resolvida (ex.: já fatiado), não pesa."""
+    if any(c in CODS_FICHA for c in r.get("erros_cod", ())):
+        return "REPROVADO"
+    if estruturais_pendentes or r.get("avisos"):
         return "PARCIAL"
     return "PRONTO"
 

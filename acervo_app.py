@@ -51,7 +51,10 @@ import comum
 import frontmatter
 import taxonomia
 import triagem
-from auditar_acervo import auditar as _auditar_arquivo, nota as _nota_auditoria
+from auditar_acervo import (CODS_FICHA as _CODS_FICHA,
+                            auditar as _auditar_arquivo,
+                            nota as _nota_auditoria,
+                            nota_ficha as _nota_ficha)
 
 # ---------------------------------------------------------------------------
 # Estado global de execução (um job por vez — simples e previsível)
@@ -120,6 +123,39 @@ class Job:
 JOB = Job()
 CFG = {"root": "", "scripts": "", "venv": str(Path.home() / "venvs/acervo"),
        "lang": "auto", "lang_fallback": "por+eng"}
+
+
+# ---------------------------------------------------------------------------
+# Configuração persistente — reabrir o painel RETOMA de onde parou.
+# Precedência: args da CLI > config.json > defaults embutidos.
+# ---------------------------------------------------------------------------
+def _config_path() -> Path:
+    return Path.home() / ".config" / "acervo" / "config.json"
+
+
+def carregar_config() -> dict:
+    """Lê o config salvo; nunca levanta, filtra chaves/tipos conhecidos."""
+    try:
+        dados = json.loads(_config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    cfg = {k: v for k, v in dados.items()
+           if k in CFG and isinstance(v, str)}
+    # a trava do /api/config não pode ser burlada por um config editado à mão
+    if str(cfg.get("venv", "")).startswith("/mnt/"):
+        cfg.pop("venv")
+    return cfg
+
+
+def salvar_config() -> None:
+    """Grava o CFG atual; falha de escrita nunca derruba o handler."""
+    try:
+        p = _config_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(CFG, ensure_ascii=False, indent=2),
+                     encoding="utf-8")
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +395,7 @@ def progresso():
         mds = [f for f in bruto.glob("*.md") if not f.name.startswith("RELATORIO")]
         r["bruto"] = len(mds)
         r["limpo"] = sum(1 for f in bruto.glob("*.md.bak"))
+    r["fichas"] = resumo_fichas()   # cacheado: só reaudita quando um md muda
 
     limpo = base / "3-MARKDOWN-LIMPO"
     if limpo.is_dir():
@@ -458,13 +495,17 @@ def acao_triagem(dry=True, force=False, modo="manter"):
     return JOB.start(nome, ["bash", str(sh)], cwd=CFG["root"], env=env)
 
 
-def acao_paginar(offset=0, romanas=0):
+def acao_paginar(offset=0, romanas=0, reconverter=False):
     """Converte a pasta: TODOS os PDFs pesquisáveis do CSV → markdown com âncoras.
 
     Antes só convertia quem exige âncora de página — legislação/jurisprudência
     (que não exigem) ficavam de fora e o botão parecia quebrado. A âncora extra
     não reprova ninguém; escaneado ainda sem OCR não é convertível e é listado
     no log com a instrução de voltar à etapa 2.
+
+    RETOMADA SEM PERDA: markdown de destino que JÁ EXISTE é pulado por padrão
+    — reconverter sobrescreveria a ficha corrigida à mão no 2-MARKDOWN-BRUTO.
+    `reconverter=True` (checkbox no card) refaz conscientemente.
     """
     linhas = ler_csv()
     if not linhas:
@@ -475,7 +516,7 @@ def acao_paginar(offset=0, romanas=0):
     saida = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
     saida.mkdir(exist_ok=True)
 
-    cmds, nomes, sem_ocr = [], [], []
+    cmds, nomes, sem_ocr, ja_convertidos = [], [], [], []
     for l in linhas:
         # prefere o _OCR quando existe; senão, o original
         src = l.get("arquivo_ocr") or l.get("caminho")
@@ -490,6 +531,9 @@ def acao_paginar(offset=0, romanas=0):
             sem_ocr.append(Path(src).name)
             continue
         dst = saida / (Path(src).stem.replace("_OCR", "") + ".md")
+        if dst.exists() and not reconverter:
+            ja_convertidos.append(dst.name)
+            continue
         c = [str(vpy), str(script), src, "-o", str(dst)]
         if offset:
             c += ["--offset", str(offset)]
@@ -506,6 +550,10 @@ def acao_paginar(offset=0, romanas=0):
         nomes.append(Path(src).name)
 
     if not cmds:
+        if ja_convertidos:
+            return False, (f"{len(ja_convertidos)} arquivo(s) já convertidos — "
+                           "nada a fazer. As fichas do 2-MARKDOWN-BRUTO foram "
+                           "preservadas; marque \"reconverter existentes\" para refazer.")
         if sem_ocr:
             return False, (f"Nenhum PDF pesquisável ainda — {len(sem_ocr)} "
                            "arquivo(s) precisam de OCR (etapa 2) antes de converter.")
@@ -513,6 +561,8 @@ def acao_paginar(offset=0, romanas=0):
 
     partes = [f'echo "=== {len(cmds)} PDF(s) pesquisáveis -> 2-MARKDOWN-BRUTO ==="']
     partes += [f'echo {shlex.quote("    " + n)}' for n in nomes]
+    partes += [f'echo {shlex.quote("    PULADO (já convertido — ficha preservada): " + n)}'
+               for n in ja_convertidos]
     partes += [f'echo {shlex.quote("    PULADO (precisa de OCR — etapa 2): " + n)}'
                for n in sem_ocr]
     partes += ['echo ' + shlex.quote(f">> [{i+1}/{len(cmds)}] {nomes[i]}") + f' ; {c}'
@@ -574,6 +624,11 @@ def acao_lote(arquivos, offset=0, romanas=0, tipo="", idioma=""):
         n_ok += 1
         dst = saida / (src.stem.replace("_OCR", "") + ".md")
         cab = f'echo "" ; echo ">> [{i}/{len(arquivos)}] {src.name}"'
+        if dst.exists():
+            # seleção explícita sobrescreve, mas avisa (ficha anterior se vai)
+            cab += " ; echo " + shlex.quote(
+                f"   AVISO: sobrescrevendo {dst.name} existente — a ficha "
+                "anterior será substituída")
 
         if src.suffix.lower() in (".epub", ".mobi", ".azw3"):
             # Rota A (Calibre). ePUB/MOBI não têm paginação fixa — avisa.
@@ -757,6 +812,10 @@ def _vocab():
         "tipos_fonte": sorted(taxonomia.TIPOS_FONTE),
         "obrigatorios": {tf: list(taxonomia.campos_obrigatorios(tf))
                          for tf in taxonomia.TIPOS_FONTE},
+        # a régua que de fato REPROVA (obrigatórios − dívida tolerada):
+        # é por ela que o formulário marca o asterisco e o destaque
+        "bloqueantes": {tf: list(taxonomia.campos_bloqueantes(tf))
+                        for tf in taxonomia.TIPOS_FONTE},
         "tipo_unico": {tf: taxonomia.tipo_unico_de(tf)
                        for tf in taxonomia.TIPOS_FONTE},
         "tipos": list(taxonomia.TIPOS),
@@ -776,8 +835,97 @@ def _ficha_path(nome: str):
     return p
 
 
+def _ja_fatiado(stem: str) -> bool:
+    """As fatias desta obra já existem no 3-MARKDOWN-LIMPO?"""
+    if not CFG["root"]:
+        return False
+    limpo = Path(CFG["root"]) / "3-MARKDOWN-LIMPO"
+    pref = comum.prefixo_fatia(stem)
+    return ((limpo / f"{pref}_INDICE.md").exists()
+            or (limpo / f"{pref}_p01.md").exists())
+
+
+# Erro ESTRUTURAL não se conserta no formulário — a orientação diz ONDE.
+# (etapa, texto quando pendente) por código do auditor.
+ORIENTACAO = {
+    "gigante": "resolve-se na etapa 5 — Fatiar (o mestre não cabe na IA inteiro)",
+    "sem_ancoras": "resolve-se na etapa 3 — reconverter o PDF-fonte "
+                   "(injetar_paginas recria as âncoras)",
+    "sem_frontmatter": "resolve-se na etapa 3 — reconverter (o arquivo "
+                       "não tem YAML nenhum)",
+}
+
+
+def _classificar_ficha(f: Path) -> dict:
+    """FONTE ÚNICA da situação de uma ficha — usada pela lista, pelo salvar
+    e pelos contadores do trilho. Separa o que se corrige NA ficha do que
+    se resolve em outra etapa (com orientação, e 'resolvida' quando o disco
+    prova que já foi — ex.: gigante com as fatias já geradas)."""
+    texto = f.read_text(encoding="utf-8", errors="replace")
+    fm = frontmatter.ler(texto).campos
+    r = _auditar_arquivo(f)
+
+    tf = str(fm.get("tipo_fonte") or "")
+    faltam = []
+    if tf in taxonomia.TIPOS_FONTE:
+        faltam = [c for c in taxonomia.campos_bloqueantes(tf)
+                  if comum.vazio(fm.get(c))]
+
+    erros_ficha, pendencias = [], []
+    estruturais_pendentes = False
+    for msg, cod in zip(r.get("erros", []), r.get("erros_cod", [])):
+        if cod in _CODS_FICHA:
+            erros_ficha.append(msg)
+            continue
+        resolvida = (cod == "gigante" and _ja_fatiado(f.stem))
+        pendencias.append({
+            "msg": msg,
+            "orientacao": ("resolvido: as fatias já existem em 3-MARKDOWN-LIMPO "
+                           "— o mestre fica inteiro por design"
+                           if resolvida else ORIENTACAO.get(cod, "")),
+            "resolvida": resolvida,
+        })
+        estruturais_pendentes = estruturais_pendentes or not resolvida
+
+    nota = _nota_ficha(r, estruturais_pendentes)
+
+    # o que a AUTOMAÇÃO atribuiu e pede confirmação humana
+    revisar = []
+    if "# palpite da triagem" in texto:
+        revisar.append("tipo_fonte é palpite da triagem")
+    if "# derivado do tipo_fonte" in texto:
+        revisar.append("tipo derivado automaticamente")
+    if str(fm.get("status") or "") == "A-conferir":
+        revisar.append("status A-conferir")
+    if str(fm.get("confiabilidade") or "") == "A-conferir":
+        revisar.append("confiabilidade A-conferir")
+
+    if nota == "REPROVADO":
+        grupo = "corrigir"
+    elif revisar or nota != "PRONTO":
+        grupo = "conferir"
+    else:
+        grupo = "pronta"
+
+    aut = fm.get("autoria")
+    return {
+        "arquivo": f.name,
+        "tipo_fonte": tf,
+        "tipo": str(fm.get("tipo") or ""),
+        "ano": str(fm.get("ano") or ""),
+        "autoria": "; ".join(aut) if isinstance(aut, list) else str(aut or ""),
+        "nota": nota,
+        "faltam_campos": faltam,
+        "erros_ficha": erros_ficha,
+        "pendencias_outras_etapas": pendencias,
+        "n_avisos": len(r.get("avisos", [])),
+        "revisar": revisar,
+        "grupo": grupo,
+    }
+
+
 def listar_fichas():
-    """Cada .md do bruto com os campos-chave e a nota da auditoria."""
+    """Cada .md do bruto, já classificado (situação/grupo/orientações)."""
     if not CFG["root"]:
         return []
     base = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
@@ -788,35 +936,48 @@ def listar_fichas():
         if f.name.startswith(("RELATORIO", "_")):
             continue
         try:
-            texto = f.read_text(encoding="utf-8", errors="replace")
-            fm = frontmatter.ler(texto).campos
-            r = _auditar_arquivo(f)
+            out.append(_classificar_ficha(f))
         except Exception:
             continue
-        aut = fm.get("autoria")
-        # o que a AUTOMAÇÃO atribuiu e pede confirmação humana: palpite da
-        # triagem, tipo derivado do tipo_fonte, status/confiabilidade A-conferir
-        revisar = []
-        if "# palpite da triagem" in texto:
-            revisar.append("tipo_fonte é palpite da triagem")
-        if "# derivado do tipo_fonte" in texto:
-            revisar.append("tipo derivado automaticamente")
-        if str(fm.get("status") or "") == "A-conferir":
-            revisar.append("status A-conferir")
-        if str(fm.get("confiabilidade") or "") == "A-conferir":
-            revisar.append("confiabilidade A-conferir")
-        out.append({
-            "arquivo": f.name,
-            "tipo_fonte": str(fm.get("tipo_fonte") or ""),
-            "tipo": str(fm.get("tipo") or ""),
-            "ano": str(fm.get("ano") or ""),
-            "autoria": "; ".join(aut) if isinstance(aut, list) else str(aut or ""),
-            "nota": _nota_auditoria(r),
-            "erros": r.get("erros", [])[:4],
-            "n_avisos": len(r.get("avisos", [])),
-            "revisar": revisar,
-        })
     return out
+
+
+# Resumo das fichas para o card ✎ do trilho. O poll de /api/estado roda a
+# cada 1,5 s — auditar todos os md a cada poll seria caro (OneDrive/mnt).
+# Cache: chave barata (glob+stat, custo que o progresso() já paga); a
+# auditoria só recomputa quando algum md do bruto muda.
+_FICHAS_CACHE = {"chave": None, "resumo": None}
+_FICHAS_LOCK = threading.Lock()
+
+
+def resumo_fichas():
+    """{'total','corrigir','conferir','prontas'} — barato no poll."""
+    if not CFG["root"]:
+        return {"total": 0, "corrigir": 0, "conferir": 0, "prontas": 0}
+    base = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
+    if not base.is_dir():
+        return {"total": 0, "corrigir": 0, "conferir": 0, "prontas": 0}
+    try:
+        chave = tuple(sorted(
+            (f.name, f.stat().st_mtime_ns, f.stat().st_size)
+            for f in base.glob("*.md")
+            if not f.name.startswith(("RELATORIO", "_"))))
+    except OSError:
+        chave = None
+    with _FICHAS_LOCK:
+        if chave is not None and chave == _FICHAS_CACHE["chave"]:
+            return _FICHAS_CACHE["resumo"]
+    fichas = listar_fichas()
+    resumo = {
+        "total": len(fichas),
+        "corrigir": sum(1 for f in fichas if f["grupo"] == "corrigir"),
+        "conferir": sum(1 for f in fichas if f["grupo"] == "conferir"),
+        "prontas": sum(1 for f in fichas if f["grupo"] == "pronta"),
+    }
+    with _FICHAS_LOCK:
+        _FICHAS_CACHE["chave"] = chave
+        _FICHAS_CACHE["resumo"] = resumo
+    return resumo
 
 
 def _atualizar_frontmatter(texto: str, novos: dict) -> str:
@@ -862,9 +1023,11 @@ def salvar_ficha(nome: str, campos: dict):
         return {"ok": False, "msg": "nenhum campo preenchido."}
     texto = p.read_text(encoding="utf-8", errors="replace")
     p.write_text(_atualizar_frontmatter(texto, novos), encoding="utf-8")
-    r = _auditar_arquivo(p)
-    return {"ok": True, "nota": _nota_auditoria(r),
-            "erros": r.get("erros", []), "gravados": sorted(novos)}
+    with _FICHAS_LOCK:                      # mtime pode ser grosseiro no /mnt
+        _FICHAS_CACHE["chave"] = None
+    resposta = {"ok": True, "gravados": sorted(novos)}
+    resposta.update(_classificar_ficha(p))
+    return resposta
 
 
 # ---------------------------------------------------------------------------
@@ -908,13 +1071,24 @@ class Handler(BaseHTTPRequestHandler):
             plano = {k: ("; ".join(str(x) for x in v) if isinstance(v, list)
                          else str(v if v is not None else ""))
                      for k, v in fm.items()}
+            cls = _classificar_ficha(p)
+            plano["_faltam_campos"] = cls["faltam_campos"]
+            plano["_pendencias"] = cls["pendencias_outras_etapas"]
             # a referência ABNT ninguém deveria montar à mão: o validador
-            # já sabe sugerir a partir da ficha (validar_yaml_abnt --gerar)
-            try:
-                import validar_yaml_abnt
-                plano["_sugestao_referencia"] = validar_yaml_abnt.montar_referencia(fm)
-            except Exception:
-                plano["_sugestao_referencia"] = ""
+            # sabe sugerir — mas SÓ com os bloqueantes preenchidos (com
+            # autoria vazia a sugestão sai mutilada: ". 6.298, de ...")
+            plano["_sugestao_referencia"] = ""
+            bloqueio = cls["faltam_campos"] or (
+                ["tipo_fonte"] if cls["erros_ficha"] else [])
+            if not bloqueio:
+                try:
+                    import validar_yaml_abnt
+                    plano["_sugestao_referencia"] = (
+                        validar_yaml_abnt.montar_referencia(fm))
+                except Exception:
+                    pass
+            else:
+                plano["_sugestao_bloqueada_por"] = bloqueio
             return self._send(200, json.dumps(plano, ensure_ascii=False))
         if u.path == "/api/estado":
             return self._send(200, json.dumps({
@@ -962,6 +1136,7 @@ class Handler(BaseHTTPRequestHandler):
                         "arquivos e ficaria lentíssimo.\n\n"
                         "Use ~/venvs/acervo (disco do Linux). "
                         "Mantido o valor anterior: " + CFG["venv"])
+                    salvar_config()   # root/scripts válidos deste POST persistem
                     return self._send(200, json.dumps(
                         {"ok": False, "avisos": avisos, "cfg": CFG}, ensure_ascii=False))
 
@@ -985,6 +1160,7 @@ class Handler(BaseHTTPRequestHandler):
             if data.get("lang_fallback"):
                 CFG["lang_fallback"] = data["lang_fallback"]
 
+            salvar_config()
             return self._send(200, json.dumps(
                 {"ok": not avisos, "avisos": avisos, "cfg": CFG}, ensure_ascii=False))
 
@@ -1004,7 +1180,8 @@ class Handler(BaseHTTPRequestHandler):
                                        force=bool(data.get("force")))
             elif a == "paginar":
                 ok, msg = acao_paginar(int(data.get("offset") or 0),
-                                       int(data.get("romanas") or 0))
+                                       int(data.get("romanas") or 0),
+                                       reconverter=bool(data.get("reconverter")))
             elif a == "arquivo":
                 ok, msg = acao_lote(data.get("arquivos") or data.get("arquivo") or [],
                                     int(data.get("offset") or 0),
@@ -1119,6 +1296,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .et.ativa .dot{border-color:var(--burg);background:var(--burg);color:#fff;
   box-shadow:0 0 0 4px rgba(122,46,58,.12)}
 .et.bloq .dot{opacity:.45}
+#ef .dot{font-size:14px}   /* ✎: trabalho humano contínuo, sem número de etapa */
 .et.feito .linha{background:var(--ok)}
 .et .conteudo{background:var(--surf);border:1px solid var(--line);border-radius:12px;
   padding:13px 15px;margin:0 0 10px 12px;box-shadow:var(--sh);transition:.2s}
@@ -1217,6 +1395,15 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .fitem .fnome span{overflow-wrap:anywhere}
 .fitem .fdet{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.55}
 .fitem .fdet .err{color:var(--err)} .fitem .fdet .rev{color:var(--warn)}
+.fitem .fdet .pok{color:var(--ok)}
+/* formulário da ficha: obrigatório (asterisco) e obrigatório VAZIO (vermelho) */
+.campo label .ob{color:var(--err);font-weight:700}
+.campo.falta label{color:var(--err)}
+.campo.falta input,.campo.falta select{border-color:var(--err)}
+.fb-bloco{border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+  margin-bottom:8px;font-size:12.5px;line-height:1.55}
+.fb-bloco b.t{display:block;font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;margin-bottom:3px}
 .fgrupo{font:600 10.5px var(--sans);letter-spacing:.08em;
   text-transform:uppercase;margin:14px 0 7px}
 .fgrupo:first-child{margin-top:0}
@@ -1430,7 +1617,7 @@ tr:hover td{background:var(--surf2)}
           <span class="desc">PDF → Markdown com âncoras <code>{{p.NN}}</code>. Converte todos os PDFs pesquisáveis; escaneado sem OCR fica listado como pulado.</span>
           <span class="st" id="s3">—</span>
           <div class="acoes">
-            <button data-a class="primary" onclick="acao('paginar',{offset:+offset.value,romanas:+romanas.value})">Converter pasta</button>
+            <button data-a class="primary" onclick="acao('paginar',{offset:+offset.value,romanas:+romanas.value,reconverter:reconv.checked})">Converter pasta</button>
           </div>
         </div>
         <div class="extra">
@@ -1447,6 +1634,7 @@ tr:hover td{background:var(--surf2)}
             </div>
           </div>
           <div class="dica"><b>offset</b>: se a página impressa “1” é a 13ª folha do PDF, use 12. <b>romanas até</b>: nº de páginas do prefácio em algarismo romano.</div>
+          <div class="dica"><label style="cursor:pointer"><input type="checkbox" id="reconv"> <b>reconverter existentes</b> — sobrescreve os markdowns já convertidos, <span style="color:var(--err)">inclusive fichas corrigidas à mão</span>. Desmarcado (padrão), quem já foi convertido é pulado e a ficha fica preservada.</label></div>
         </div>
       </div>
     </div>
@@ -1495,10 +1683,19 @@ tr:hover td{background:var(--surf2)}
           <h3>Validar</h3><button class="iet" onclick="abrirInfo('e6')" title="O que faz esta etapa?">i</button>
           <span class="desc">Âncoras íntegras · YAML coerente com o tipo de fonte.</span>
           <span class="st" id="s6">—</span>
-          <div class="acoes">
-            <button onclick="abrirFichas()" title="todas as fichas, com o que merece atenção — ajuste manual e confirmação do que a automação atribuiu">📋 Fichas</button>
-            <button data-a onclick="acao('validar')">Validar</button>
-          </div>
+          <div class="acoes"><button data-a onclick="acao('validar')">Validar</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="et" id="ef">
+      <div class="bar"><div class="dot">✎</div><div class="linha"></div></div>
+      <div class="conteudo">
+        <div class="topo">
+          <h3>Fichas</h3><button class="iet" onclick="abrirInfo('ef')" title="O que faz esta etapa?">i</button>
+          <span class="desc">Revisão <b>humana</b> da ficha ABNT — corrija o que bloqueia e confirme o que a automação atribuiu.</span>
+          <span class="st" id="sf">—</span>
+          <div class="acoes"><button class="primary" onclick="abrirFichas()">📋 Abrir fichas</button></div>
         </div>
       </div>
     </div>
@@ -1931,9 +2128,12 @@ const INFO = {
   s:'Nota-índice + fatias em <code>3-MARKDOWN-LIMPO/</code> — é isto que se publica no vault.'},
  e6:{t:'6 · Validar — as travas de qualidade',
   o:'Duas verificações que evitam retrabalho lá na frente: <b>âncoras íntegras</b> (nenhuma página se perdeu na conversão/limpeza) e <b>YAML coerente com o tipo</b> (livro exige página e editora; lei não). Metadado errado não dá erro no Obsidian — a nota some dos painéis em silêncio. Validar aqui é o que impede esse silêncio.',
-  a:[['📋 Fichas','abre o painel lateral com <b>todas</b> as fichas em 3 grupos: ✗ <b>Corrigir</b> (bloqueiam a publicação), ⚠ <b>Conferir</b> (o que a automação atribuiu — palpite de tipo_fonte, tipo derivado, A-conferir — para você confirmar) e ✓ Prontas. "✎ Editar" abre o formulário com os campos que o tipo exige e a sugestão de referência ABNT com um clique; salvar revalida na hora.'],
-     ['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
-  s:'Relatório no log da seção 02 (não grava arquivo). Correções e confirmações: botão <b>📋 Fichas</b> ao lado.'},
+  a:[['Validar','roda <code>verificar_ancoras.py</code> + <code>validar_yaml_abnt.py</code> sobre <code>2-MARKDOWN-BRUTO/</code>; o log lista arquivo a arquivo o que falta.']],
+  s:'Relatório no log da seção 02 (não grava arquivo). Correções e confirmações: card <b>✎ Fichas</b>, logo abaixo.'},
+ ef:{t:'✎ · Fichas — a revisão humana (saneamento)',
+  o:'O passo sem número do trilho: é <b>trabalho seu</b>, não de script — por isso o ✎. O card mostra ao vivo quantas fichas <b>bloqueiam</b> a publicação e quantas aguardam a sua <b>confirmação</b> do que a automação atribuiu. Erro que não se resolve na ficha (ex.: arquivo gigante) aparece <b>encaminhado</b> para a etapa certa — e como resolvido quando o disco prova que já foi (fatias existem).',
+  a:[['📋 Abrir fichas','painel lateral com todas as fichas em 3 grupos: ✗ <b>Corrigir</b> (REPROVADAS — bloqueiam a publicação), ⚠ <b>Conferir</b> (palpite de tipo_fonte, tipo derivado, A-conferir) e ✓ Prontas. "✎ Editar" abre o formulário: campos exigidos pelo tipo com <b>asterisco</b>, vazios em <b>vermelho</b>, sugestão de referência ABNT quando a ficha permite; salvar revalida na hora.']],
+  s:'Os próprios <code>.md</code> do <code>2-MARKDOWN-BRUTO</code>, corrigidos campo a campo. Depois de mexer nas fichas, <b>refatie</b> (etapa 5) — as fatias herdam.'},
  e7:{t:'7 · Auditar — a nota final de cada arquivo',
   o:'Responde à pergunta "isto <b>serve</b> ao segundo cérebro?": cruza ficha, âncoras e conteúdo e dá a cada arquivo uma nota — <b>PRONTO</b>, <b>PARCIAL</b> (avisos) ou <b>REPROVADO</b> (corrigir antes de publicar; a etapa 8 recusa reprovados).',
   a:[['Auditar','roda <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
@@ -1994,9 +2194,10 @@ async function carregarFichas(){
     fichasInfo.textContent = 'Nenhum markdown em 2-MARKDOWN-BRUTO — converta antes (etapa 3).';
     return;
   }
-  const corrigir = fs.filter(f=>f.nota==='REPROVADO');
-  const conferir = fs.filter(f=>f.nota!=='REPROVADO' && (f.revisar.length || f.nota!=='PRONTO'));
-  const prontas  = fs.filter(f=>f.nota==='PRONTO' && !f.revisar.length);
+  // o grupo é decidido no SERVIDOR (_classificar_ficha) — regra única
+  const corrigir = fs.filter(f=>f.grupo==='corrigir');
+  const conferir = fs.filter(f=>f.grupo==='conferir');
+  const prontas  = fs.filter(f=>f.grupo==='pronta');
   fichasInfo.innerHTML = `<b>${fs.length}</b> nota(s) — ` +
     `<span style="color:var(--err)">${corrigir.length} corrigir</span> · ` +
     `<span style="color:var(--warn)">${conferir.length} conferir</span> · ` +
@@ -2008,7 +2209,10 @@ async function carregarFichas(){
         ${f.tipo_fonte ? `tipo_fonte <b>${esc(f.tipo_fonte)}</b>` : '<span class="err">✗ sem tipo_fonte</span>'}` +
       `${f.tipo ? ` · tipo <b>${esc(f.tipo)}</b>` : ''}${f.ano ? ` · ${esc(f.ano)}` : ''}` +
       `${f.autoria ? ` · ${esc(f.autoria)}` : ''}
-        ${f.erros.length ? `<br><span class="err">✗ ${f.erros.map(esc).join('</span><br><span class="err">✗ ')}</span>` : ''}
+        ${f.erros_ficha.length ? `<br><span class="err">✗ ${f.erros_ficha.map(esc).join('</span><br><span class="err">✗ ')}</span>` : ''}
+        ${f.pendencias_outras_etapas.map(p => p.resolvida
+            ? `<br><span class="pok">✓ ${esc(p.msg.split(' — ')[0].split('.')[0])} — ${esc(p.orientacao)}</span>`
+            : `<br><span class="rev">⤳ ${esc(p.msg.split(' — ')[0])} — ${esc(p.orientacao)}</span>`).join('')}
         ${f.revisar.length ? `<br><span class="rev">⚠ ${f.revisar.map(esc).join(' · ')}</span>` : ''}
         ${f.n_avisos ? `<br><span class="rev">⚠ ${f.n_avisos} aviso(s) na auditoria</span>` : ''}
       </div></div>`;
@@ -2030,23 +2234,30 @@ async function abrirFicha(arq){
 }
 function campoFicha(c){
   const v = F_CAMPOS[c] || '';
+  const tf = F_CAMPOS.tipo_fonte || '';
+  const bloqueante = (VOCAB.bloqueantes[tf]||[]).includes(c);
+  const falta = bloqueante && !v;
+  const ast = bloqueante ? ' <span class="ob" title="obrigatório para este tipo — bloqueia a publicação se vazio">*</span>' : '';
+  const cls = falta ? 'campo falta' : 'campo';
   if(F_SEL[c]){
     const ops = VOCAB[F_SEL[c]];
-    return `<div class="campo"><label>${esc(c)}</label><select id="f_${esc(c)}">
+    return `<div class="${cls}"><label>${esc(c)}${ast}</label><select id="f_${esc(c)}">
       <option value="">${v ? '(manter: '+esc(v)+')' : '(vazio)'}</option>
       ${ops.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select></div>`;
   }
   const extra = VOCAB.listas.includes(c) ? ' · vários? separe com ;' : '';
-  return `<div class="campo"><label>${esc(c)}${extra}</label>
+  return `<div class="${cls}"><label>${esc(c)}${ast}${falta?' — <b>preencha</b>':''}</label>
     <input type="text" id="f_${esc(c)}" value="${esc(v)}" placeholder="(em branco = não mexe)"></div>`;
 }
 function campoReferencia(){
   const v = F_CAMPOS.referencia_abnt || '';
   const sug = F_CAMPOS._sugestao_referencia || '';
+  const bloq = F_CAMPOS._sugestao_bloqueada_por || [];
   return `<div class="campo"><label>referencia_abnt</label>
     <input type="text" id="f_referencia_abnt" value="${esc(v)}" placeholder="(em branco = não mexe)">
     ${(sug && !v) ? `<div class="dica">sugestão do validador, montada da ficha atual:<br><i>${esc(sug)}</i><br>
       <button class="bnav" onclick="f_referencia_abnt.value=${q(sug)}" style="margin-top:4px">↳ usar a sugestão</button></div>` : ''}
+    ${(!sug && !v && bloq.length) ? `<div class="dica">a sugestão de referência aparece quando <b>${bloq.map(esc).join(', ')}</b> estiverem preenchidos — sugerir agora sairia mutilada.</div>` : ''}
   </div>`;
 }
 function renderFicha(){
@@ -2078,10 +2289,29 @@ async function salvarFicha(){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({arquivo:FICHA_ARQ, campos})})).json();
   if(!r.ok){ fsovErros.innerHTML = '<b style="color:var(--err)">✗</b> ' + esc(r.msg||'erro'); return; }
-  fsovErros.innerHTML = r.nota==='PRONTO'
-    ? '<b style="color:var(--ok)">✓ PRONTO</b> — ficha completa para o segundo cérebro'
-    : `<b style="color:var(--warn)">${esc(r.nota)}</b>` +
-      (r.erros.length ? ' — falta: ' + esc(r.erros.slice(0,3).join(' | ')) : '');
+  /* feedback em DOIS blocos: o que é da ficha × o que é de outra etapa */
+  const falta = (r.faltam_campos||[]);
+  const fichaOk = !falta.length && !(r.erros_ficha||[]).length;
+  let html = `<div class="fb-bloco"><b class="t" style="color:${fichaOk?'var(--ok)':'var(--err)'}">Ficha</b>`;
+  if(fichaOk){
+    html += `<span style="color:var(--ok)">✓ completa — nada bloqueia por parte da ficha</span>`;
+  } else {
+    if(falta.length) html += `<span style="color:var(--err)">✗ preencha: <b>${falta.map(esc).join(', ')}</b> — destacados em vermelho abaixo</span>`;
+    (r.erros_ficha||[]).forEach(e=>{
+      if(!/campos ABNT vazios/.test(e)) html += `<br><span style="color:var(--err)">✗ ${esc(e)}</span>`;
+    });
+  }
+  html += `</div>`;
+  const pend = (r.pendencias_outras_etapas||[]);
+  if(pend.length){
+    html += `<div class="fb-bloco"><b class="t" style="color:var(--warn)">Outras etapas — não se resolve neste formulário</b>`
+      + pend.map(p => p.resolvida
+          ? `<span style="color:var(--ok)">✓ ${esc(p.msg.split(' — ')[0].split('.')[0])} — ${esc(p.orientacao)}</span>`
+          : `<span style="color:var(--warn)">⤳ ${esc(p.msg.split(' — ')[0])} — ${esc(p.orientacao)}</span>`).join('<br>')
+      + `</div>`;
+  }
+  html += `<p class="sov-dica">situação: <b>${esc(r.nota)}</b> · gravados: ${(r.gravados||[]).map(esc).join(', ')||'—'}</p>`;
+  fsovErros.innerHTML = html;
   F_CAMPOS = await (await fetch('/api/ficha?arq='+encodeURIComponent(FICHA_ARQ))).json();
   renderFicha();
 }
@@ -2154,6 +2384,7 @@ function marcar(id, estadoEt, texto, classe){
 function atualizarTrilho(p, temRoot){
   if(!temRoot){
     for(let i=1;i<=10;i++) marcar('e'+i,'bloq','defina a pasta','');
+    marcar('ef','bloq','defina a pasta','');
     return;
   }
   const dt = (k) => (p.datas && p.datas[k]) ? ' · '+p.datas[k] : '';
@@ -2179,6 +2410,12 @@ function atualizarTrilho(p, temRoot){
   // 6 validar
   if(!p.bruto)          marcar('e6','bloq','converta antes','');
   else                  marcar('e6','ativa','pronto','');
+  // ✎ fichas — saneamento humano (contadores do resumo cacheado no servidor)
+  const fi = p.fichas || {};
+  if(!p.bruto)          marcar('ef','bloq','converta antes','');
+  else if(fi.corrigir)  marcar('ef','ativa', fi.corrigir+' corrigir · '+fi.conferir+' conferir','pend');
+  else if(fi.conferir)  marcar('ef','ativa', fi.conferir+' conferir','pend');
+  else                  marcar('ef','feito', (fi.prontas||0)+' prontas','ok');
   // 7 auditar
   if(!p.bruto)          marcar('e7','bloq','converta antes','');
   else if(p.auditado)   marcar('e7','feito','relatório gerado'+dt('auditado'),'ok');
@@ -2283,15 +2520,28 @@ estado(); setInterval(estado, 1500);
 def main():
     ap = argparse.ArgumentParser(description="Painel do Acervo (WSL2)")
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--root", default="", help="pasta do acervo (Windows ou WSL)")
-    ap.add_argument("--scripts", default=str(Path(__file__).resolve().parent),
+    ap.add_argument("--root", default=None, help="pasta do acervo (Windows ou WSL)")
+    ap.add_argument("--scripts", default=None,
                     help="pasta com aplicar_ocr.sh e os .py")
-    ap.add_argument("--venv", default=str(Path.home() / "venvs/acervo"))
+    ap.add_argument("--venv", default=None)
     a = ap.parse_args()
 
-    CFG["root"] = win_para_wsl(a.root) if a.root else ""
-    CFG["scripts"] = win_para_wsl(a.scripts)
-    CFG["venv"] = win_para_wsl(a.venv)
+    # Retomada: config salvo entra primeiro; arg explícito da CLI vence;
+    # o que sobrar vazio cai nos defaults embutidos.
+    CFG.update(carregar_config())
+    if a.root is not None:
+        CFG["root"] = win_para_wsl(a.root) if a.root else ""
+    if a.scripts is not None:
+        CFG["scripts"] = win_para_wsl(a.scripts)
+    if a.venv is not None:
+        CFG["venv"] = win_para_wsl(a.venv)
+    if not CFG["scripts"]:
+        CFG["scripts"] = str(Path(__file__).resolve().parent)
+    if not CFG["venv"]:
+        CFG["venv"] = str(Path.home() / "venvs/acervo")
+    if CFG["root"] and not Path(CFG["root"]).is_dir():
+        print(f"AVISO: pasta do acervo salva não existe mais: {CFG['root']}")
+        CFG["root"] = ""
 
     try:
         srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)

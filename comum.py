@@ -34,3 +34,9 @@ def alvo_wikilink(texto) -> str:
     """Primeiro alvo de wikilink num texto (ex.: campo `obra:`), ou ''. """
     m = WIKILINK.search(str(texto or ""))
     return m.group(1).strip() if m else ""
+
+
+def prefixo_fatia(stem: str) -> str:
+    """Slug do nome-base das fatias/índice de uma obra — fonte única: o
+    fatiar GERA com ele; quem procura fatias no disco usa O MESMO slug."""
+    return re.sub(r"[^\w\-]+", "-", stem)[:60].strip("-")
