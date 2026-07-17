@@ -39,6 +39,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -1045,6 +1046,180 @@ def resumo_fichas():
     return resumo
 
 
+# ---------------------------------------------------------------------------
+# Preenchimento assistido por IA (etapa Qualidade): gera um prompt com as
+# fichas PENDENTES (+ trecho do documento) para o usuário colar em qualquer
+# IA; a resposta volta em JSON e é aplicada com VALIDAÇÃO (vocabulários,
+# arquivos, campos) e REVERSÍVEL (backup .antes-ia, um nível de undo).
+# ---------------------------------------------------------------------------
+_CAMPOS_IA = ("autoria", "titulo", "subtitulo", "local_publicacao", "editora",
+              "ano", "edicao", "ementa", "norma_numero", "norma_data",
+              "tipo_fonte", "tipo", "area", "status", "resumo")
+
+
+def gerar_prompt_ia():
+    """Prompt autossuficiente: instrução + vocabulários + formato de saída
+    rígido + cada ficha pendente com os campos atuais, os FALTANTES e um
+    trecho do início do documento (é dele que a IA tira autor/título/ano)."""
+    pendentes = [f for f in listar_fichas()
+                 if f["grupo"] == "corrigir" or f["faltam_campos"]]
+    if not pendentes:
+        return {"pendentes": 0, "prompt": ""}
+    base = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
+    blocos = []
+    for i, f in enumerate(pendentes, 1):
+        p = base / f["arquivo"]
+        try:
+            fm = frontmatter.ler(
+                p.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        atuais = {k: fm.campos.get(k) for k in _CAMPOS_IA
+                  if not comum.vazio(fm.campos.get(k))}
+        faltam = f["faltam_campos"] or ["(defina primeiro o tipo_fonte)"]
+        trecho = " ".join(fm.corpo.split())[:2200]
+        blocos.append(
+            f"=== DOCUMENTO {i}/{len(pendentes)}: {f['arquivo']} ===\n"
+            f"Campos já preenchidos: "
+            f"{json.dumps(atuais, ensure_ascii=False) or '{}'}\n"
+            f"Campos FALTANTES: {', '.join(faltam)}\n"
+            f"Trecho do início do documento:\n\"\"\"\n{trecho}\n\"\"\"")
+    v = _vocab()
+    prompt = (
+        "Você é um bibliotecário especialista em catalogação ABNT (NBR 6023).\n"
+        f"Abaixo estão {len(blocos)} documento(s) com a ficha catalográfica "
+        "incompleta. Para cada um: o nome do arquivo, os campos já "
+        "preenchidos, os campos FALTANTES e um trecho do início do texto.\n\n"
+        "TAREFA: preencha os campos faltantes de cada documento com base no "
+        "trecho e no seu conhecimento. NÃO INVENTE: se não houver como saber "
+        "um campo com segurança, omita-o. Autoria no formato ABNT "
+        "(SOBRENOME, Nome; para órgão público, o nome do ente). Datas e anos "
+        "como aparecem no documento.\n\n"
+        "VOCABULÁRIOS FECHADOS (use exatamente um destes valores):\n"
+        f"- tipo_fonte: {', '.join(v['tipos_fonte'])}\n"
+        f"- tipo: {', '.join(v['tipos'])}\n"
+        f"- area: {', '.join(v['areas'])}\n"
+        f"- status: {', '.join(v['status'])}\n\n"
+        "FORMATO DE SAÍDA (obrigatório: responda APENAS este JSON, sem "
+        "comentários nem texto fora dele):\n"
+        '{"fichas": [{"arquivo": "<nome exato do arquivo>.md", '
+        '"campos": {"autoria": "SOBRENOME, Nome", "titulo": "...", '
+        '"ano": "...", "resumo": "3 a 8 linhas"}}]}\n'
+        f"Campos aceitos em \"campos\": {', '.join(_CAMPOS_IA)}. "
+        "Para autoria/area com múltiplos valores, separe com \"; \".\n\n"
+        + "\n\n".join(blocos))
+    return {"pendentes": len(blocos), "prompt": prompt}
+
+
+def _extrair_json_ia(texto: str) -> dict:
+    """Aceita a resposta como vier: JSON puro, com cerca ```json``` ou com
+    prosa em volta — extrai o maior bloco {...} plausível."""
+    texto = texto.strip()
+    for candidato in (
+            texto,
+            re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.M),
+            texto[texto.find("{"): texto.rfind("}") + 1]):
+        try:
+            d = json.loads(candidato)
+            if isinstance(d, dict):
+                return d
+        except (ValueError, TypeError):
+            continue
+    raise ValueError("não encontrei JSON válido na resposta")
+
+
+def aplicar_lote_ia(resposta: str):
+    """Valida e aplica a resposta da IA. Reversível: um nível de undo por
+    backup .antes-ia (a leva anterior é descartada a cada nova aplicação)."""
+    try:
+        dados = _extrair_json_ia(resposta or "")
+    except ValueError as e:
+        return {"ok": False, "msg": f"Resposta inválida: {e}. Cole o JSON "
+                                    "que a IA devolveu (com ou sem ```)."}
+    fichas = dados.get("fichas")
+    if not isinstance(fichas, list) or not fichas:
+        return {"ok": False, "msg": 'JSON sem a lista "fichas".'}
+
+    v = _vocab()
+    vocab_de = {"tipo_fonte": set(v["tipos_fonte"]), "tipo": set(v["tipos"]),
+                "area": set(v["areas"]), "status": set(v["status"]),
+                "confiabilidade": set(v["confiabilidade"])}
+    base = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
+    aplicadas, rejeitadas, avisos, prontos = [], [], [], []
+    for item in fichas:
+        if not isinstance(item, dict):
+            continue
+        nome = str(item.get("arquivo") or "")
+        p = _ficha_path(nome)
+        if p is None or not p.exists():
+            rejeitadas.append({"arquivo": nome or "(sem nome)",
+                               "motivo": "arquivo não existe no 2-MARKDOWN-BRUTO"})
+            continue
+        campos_in = item.get("campos")
+        if not isinstance(campos_in, dict):
+            rejeitadas.append({"arquivo": nome, "motivo": 'sem o objeto "campos"'})
+            continue
+        campos = {}
+        for k, val in campos_in.items():
+            k = str(k).strip()
+            if k not in _CAMPOS_IA and k != "confiabilidade":
+                avisos.append(f"{nome}: campo '{k}' não é aceito — ignorado")
+                continue
+            if val is None:
+                continue
+            if isinstance(val, list):
+                val = "; ".join(str(x) for x in val)
+            val = str(val).strip()
+            if not val:
+                continue
+            if k in vocab_de:
+                candidatos = ([x.strip() for x in val.split(";")]
+                              if k == "area" else [val])
+                fora = [c for c in candidatos if c not in vocab_de[k]]
+                if fora:
+                    avisos.append(f"{nome}: {k} '{'; '.join(fora)}' fora do "
+                                  "vocabulário — ignorado")
+                    continue
+            campos[k] = val
+        if not campos:
+            rejeitadas.append({"arquivo": nome,
+                               "motivo": "nenhum campo válido restou"})
+            continue
+        prontos.append((nome, p, campos))
+
+    if prontos:
+        # só agora a leva anterior é descartada — resposta inteira inválida
+        # NÃO destrói o undo existente
+        for velho in base.glob("*.md.antes-ia"):
+            velho.unlink()
+    for nome, p, campos in prontos:
+        # REVERSÍVEL: snapshot antes de tocar
+        shutil.copy2(p, p.with_name(p.name + ".antes-ia"))
+        r = salvar_ficha(nome, campos)
+        aplicadas.append({"arquivo": nome, "gravados": r.get("gravados", []),
+                          "nota": r.get("nota", "?"), "grupo": r.get("grupo", "?")})
+    return {"ok": True, "aplicadas": aplicadas, "rejeitadas": rejeitadas,
+            "avisos": avisos}
+
+
+def reverter_lote_ia():
+    """Restaura os arquivos da ÚLTIMA aplicação de IA (um nível de undo)."""
+    base = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
+    if not base.is_dir():
+        return {"ok": False, "msg": "pasta não encontrada"}
+    restaurados = []
+    for b in sorted(base.glob("*.md.antes-ia")):
+        alvo = b.with_name(b.name[:-len(".antes-ia")])
+        shutil.move(str(b), str(alvo))
+        restaurados.append(alvo.name)
+    with _FICHAS_LOCK:
+        _FICHAS_CACHE["chave"] = None
+        _PUB_CACHE["chave"] = None
+    if not restaurados:
+        return {"ok": False, "msg": "não há aplicação de IA para reverter"}
+    return {"ok": True, "restaurados": restaurados}
+
+
 # Prontidão REAL de publicação para o card 7 (dot "7"). "N arquivos no
 # limpo" não diz nada: o publicar tem trava de qualidade (REPROVADO não
 # entra; fatia fica retida com o índice) — o card antecipa isso auditando
@@ -1220,6 +1395,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(_vocab(), ensure_ascii=False))
         if u.path == "/api/fichas":
             return self._send(200, json.dumps(listar_fichas(), ensure_ascii=False))
+        if u.path == "/api/ia_prompt":
+            return self._send(200, json.dumps(gerar_prompt_ia(), ensure_ascii=False))
         if u.path == "/api/auditoria":
             q = parse_qs(u.query)
             return self._send(200, json.dumps(
@@ -1336,6 +1513,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/ficha":
             r = salvar_ficha(data.get("arquivo", ""), data.get("campos") or {})
+            return self._send(200, json.dumps(r, ensure_ascii=False))
+
+        if u.path == "/api/ia_aplicar":
+            r = aplicar_lote_ia(data.get("resposta", ""))
+            return self._send(200, json.dumps(r, ensure_ascii=False))
+
+        if u.path == "/api/ia_reverter":
+            r = reverter_lote_ia()
             return self._send(200, json.dumps(r, ensure_ascii=False))
 
         if u.path == "/api/acao":
@@ -1863,6 +2048,7 @@ tr:hover td{background:var(--surf2)}
           <div class="acoes">
             <button class="bnav" onclick="abrirNav('audp','dir')">📁</button>
             <button onclick="abrirAuditoria()" title="triagem do que a auditoria achou: do grave ao irrelevante, com a ação de cada item">📄 Relatório</button>
+            <button onclick="abrirIA()" title="gera um prompt com as fichas pendentes para colar em qualquer IA (Gemini, ChatGPT, Claude...) e aplica a resposta de volta — com validação e undo">🤖 Preencher com IA</button>
             <button data-a class="primary" onclick="acao('qualidade',{pasta:audp.value})">Auditar qualidade</button>
           </div>
         </div>
@@ -2011,6 +2197,28 @@ tr:hover td{background:var(--surf2)}
 <!-- MODAL · O QUE FAZ ESTA ETAPA -->
 <div class="imod-bg" id="infoBg">
   <div class="imod" id="infoMod" role="dialog" aria-label="Sobre a etapa"></div>
+</div>
+
+<!-- MODAL · PREENCHER FICHAS COM IA -->
+<div class="imod-bg" id="iaBg">
+  <div class="imod" id="iaMod" role="dialog" aria-label="Preencher fichas com IA" style="max-width:760px">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <h3 style="flex:1">🤖 Preencher fichas com IA</h3>
+      <button class="fechar" onclick="fecharIA()" title="fechar (Esc)">✕</button></div>
+    <p><b>1.</b> Copie o prompt abaixo e cole em qualquer IA (Gemini, ChatGPT, Claude…). Ele já contém as fichas pendentes, um trecho de cada documento e o <b>formato exato</b> da resposta.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
+      <button class="primary" id="iaCopiar" onclick="copiar(this, IA_PROMPT)">📋 Copiar o prompt</button>
+      <span class="sov-dica" id="iaInfo" style="margin:0"></span>
+    </div>
+    <textarea id="iaPrompt" readonly rows="7" style="width:100%;font:11px var(--mono);resize:vertical"></textarea>
+    <p style="margin-top:14px"><b>2.</b> Cole aqui a resposta da IA (o JSON, com ou sem <code>```</code>) e aplique. Cada ficha é <b>validada</b> (vocabulários, campos, arquivos) e um <b>backup</b> é feito antes — dá para desfazer.</p>
+    <textarea id="iaResposta" rows="6" style="width:100%;font:11px var(--mono);resize:vertical" placeholder='{"fichas": [{"arquivo": "...", "campos": {...}}]}'></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="primary" onclick="aplicarIA()" style="flex:1">✔ Validar e aplicar</button>
+      <button onclick="reverterIA()" title="restaura os arquivos como estavam antes da última aplicação">↩ Reverter última aplicação</button>
+    </div>
+    <div id="iaResultado" style="margin-top:10px"></div>
+  </div>
 </div>
 
 <div class="nota">
@@ -2276,8 +2484,9 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); }
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); }
 });
+iaBg.addEventListener('click', e => { if(e.target === iaBg) fecharIA(); });
 
 /* ---------- modal "o que faz esta etapa" ---------- */
 const INFO = {
@@ -2309,6 +2518,7 @@ const INFO = {
   o:'A fusão do antigo "Validar" com o antigo "Auditar" (eram dois botões parecidos): um job só examina <b>âncoras</b> (presença e integridade: duplicadas, fora de ordem, lacunas), <b>YAML coerente com o tipo</b> (campos, localizador, sistema de chamada) e dá a <b>nota</b> de cada arquivo — PRONTO, PARCIAL ou REPROVADO. Ao terminar, o <b>relatório-triagem abre sozinho</b>, do grave ao irrelevante, com a ação de cada item.',
   a:[['Auditar qualidade','roda <code>verificar_ancoras.py</code> + <code>auditar_acervo.py</code> na pasta indicada (padrão <code>2-MARKDOWN-BRUTO/</code>) e grava <code>RELATORIO-AUDITORIA.md</code>.'],
      ['📄 Relatório','reabre a triagem a qualquer momento: ✗ GRAVES (bloqueiam a publicação, com AÇÃO e atalho ✎), ⚠ CONFERIR, avisos irrelevantes, ✓ OK — fatias agregadas por obra.'],
+     ['🤖 Preencher com IA','gera um prompt com as fichas pendentes (campos atuais + faltantes + trecho do documento) para colar em <b>qualquer IA</b>; a resposta em JSON volta pelo mesmo modal e é aplicada com <b>validação</b> (vocabulários e arquivos) e <b>backup automático</b> — "↩ Reverter" desfaz a última aplicação.'],
      ['📁','escolhe outra pasta para examinar.']],
   s:'<code>RELATORIO-AUDITORIA.md</code> + a triagem no painel lateral. O que reprova corrige-se no card <b>✎ Fichas</b>.'},
  ef:{t:'✎ · Fichas — a revisão humana (saneamento)',
@@ -2522,6 +2732,55 @@ async function salvarFicha(){
 function fecharFicha(){
   fsovBg.classList.remove('on'); fsov.classList.remove('on');
   estado();   // contadores do card ✎ atualizados ao sair da mesa
+}
+
+/* ---------- preencher fichas com IA: prompt → resposta → aplicar/undo ---------- */
+let IA_PROMPT = '';
+async function abrirIA(){
+  iaBg.classList.add('on');
+  iaResultado.innerHTML = '';
+  iaInfo.textContent = 'gerando o prompt…';
+  const d = await (await fetch('/api/ia_prompt')).json();
+  IA_PROMPT = d.prompt || '';
+  iaPrompt.value = IA_PROMPT;
+  iaInfo.textContent = d.pendentes
+    ? d.pendentes + ' ficha(s) pendente(s) no prompt'
+    : 'nenhuma ficha pendente — nada a pedir à IA 🎉';
+}
+function fecharIA(){ iaBg.classList.remove('on'); }
+async function aplicarIA(){
+  const resposta = iaResposta.value.trim();
+  if(!resposta){ iaResultado.innerHTML = '<span class="err">cole a resposta da IA antes de aplicar.</span>'; return; }
+  iaResultado.textContent = 'validando e aplicando…';
+  const r = await (await fetch('/api/ia_aplicar',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({resposta})})).json();
+  if(!r.ok){ iaResultado.innerHTML = '<span class="err">✗ ' + esc(r.msg) + '</span>'; return; }
+  let html = '';
+  if(r.aplicadas.length){
+    html += `<div class="fb-bloco"><b class="t" style="color:var(--ok)">✔ Aplicadas (${r.aplicadas.length}) — backup feito; ↩ desfaz</b>`
+      + r.aplicadas.map(a=>`<span>✓ ${esc(a.arquivo)} → <b>${esc(a.nota)}</b> (${esc((a.gravados||[]).join(', '))})</span>`).join('<br>') + '</div>';
+  }
+  if(r.rejeitadas.length){
+    html += `<div class="fb-bloco"><b class="t" style="color:var(--err)">✗ Rejeitadas (${r.rejeitadas.length}) — nada foi alterado nelas</b>`
+      + r.rejeitadas.map(x=>`<span class="err">✗ ${esc(x.arquivo)} — ${esc(x.motivo)}</span>`).join('<br>') + '</div>';
+  }
+  if(r.avisos.length){
+    html += `<div class="fb-bloco" style="opacity:.85"><b class="t" style="color:var(--warn)">⚠ Campos ignorados na validação</b>`
+      + r.avisos.map(a=>`<span style="color:var(--warn)">• ${esc(a)}</span>`).join('<br>') + '</div>';
+  }
+  iaResultado.innerHTML = html || 'nada aplicado.';
+  estado(); carregarFichas();
+}
+async function reverterIA(){
+  iaResultado.textContent = 'revertendo…';
+  const r = await (await fetch('/api/ia_reverter',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  iaResultado.innerHTML = r.ok
+    ? `<div class="fb-bloco"><b class="t" style="color:var(--ok)">↩ Revertido</b>` +
+      r.restaurados.map(esc).join('<br>') + '</div>'
+    : '<span class="err">✗ ' + esc(r.msg) + '</span>';
+  estado();
 }
 
 /* ---------- relatório de auditoria: triagem do grave ao irrelevante ---------- */

@@ -5,6 +5,30 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.17.0] — 2026-07-17 · Fichas preenchidas por QUALQUER IA (validado e reversível) · Simulação com próximos passos
+
+### Adicionado
+- **🤖 Preencher com IA** (card 6·Qualidade): modal que gera um **prompt
+  pronto** com as fichas pendentes — campos atuais, faltantes, um trecho
+  do início de cada documento, os vocabulários fechados e o **formato de
+  saída** (JSON) — para colar em qualquer IA (Gemini, ChatGPT, Claude…).
+  A resposta volta pelo mesmo modal: **validação** campo a campo
+  (vocabulário inventado é ignorado com aviso; arquivo inexistente é
+  rejeitado; aceita o JSON com ou sem ``` e com prosa em volta) e
+  **reversível** — backup automático `.antes-ia` antes de tocar em
+  qualquer arquivo e botão **↩ Reverter última aplicação** (resposta
+  toda inválida não destrói o undo anterior). Aplicar reusa o gravador
+  das fichas: marcas de revisão saem, referência ABNT é gerada quando a
+  ficha completa, caches e cards atualizam na hora.
+- APIs: `GET /api/ia_prompt`, `POST /api/ia_aplicar`, `POST /api/ia_reverter`.
+
+### Alterado
+- **Simulação da publicação assertiva**: o dry-run termina com
+  **"PRÓXIMOS PASSOS para publicar 100%"** — N reprovados (→ mesa ✎ +
+  refatiar), N sem rota (→ Normalizar/mesa ✎), conflitos de curadoria
+  (--force consciente) e fatias retidas que entram sozinhas ao publicar
+  o índice.
+
 ## [3.16.0] — 2026-07-17 · Qualidade num card só · Publicar antecipa a prontidão · mestre pequeno publica
 
 ### Alterado

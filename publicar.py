@@ -217,6 +217,27 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     print(f"\n{'-'*72}")
     print(f"OK: {resultado['publicado'] + resultado['sobrescrito'] + resultado['inalterado']}"
           f"  |  problemas: {houve_problema}")
+
+    # Simulação ASSERTIVA: qualidade e publicação andam juntas — o dry-run
+    # diz exatamente O QUE fazer para chegar a 100%, na ordem do trilho.
+    if resultado["reprovado"] or resultado["bloqueado"] or resultado["retido"] \
+            or resultado["conflito"]:
+        print("\nPRÓXIMOS PASSOS para publicar 100%:")
+        if resultado["reprovado"]:
+            print(f"  ✗ {resultado['reprovado']} REPROVADO(s) na auditoria → "
+                  "complete a ficha (mesa ✎ Fichas) e REFATIE (etapa 5) — "
+                  "fatias herdam do mestre")
+        if resultado["bloqueado"]:
+            print(f"  ✗ {resultado['bloqueado']} sem rota (tipo vazio/desconhecido) → "
+                  "Normalizar (etapa 5) deriva o tipo do tipo_fonte; o restante, "
+                  "mesa ✎ Fichas")
+        if resultado["conflito"]:
+            print(f"  ⚠ {resultado['conflito']} conflito(s): o vault tem versão "
+                  "editada (curadoria) — só sobrescreva conscientemente, com --force")
+        if resultado["retido"]:
+            print(f"  · {resultado['retido']} fatia(s) retidas entram "
+                  "AUTOMATICAMENTE quando o índice da obra publicar — nada a "
+                  "fazer nelas")
     if dry:
         print("(dry-run: rode sem --dry para gravar)")
     return 1 if houve_problema else 0
