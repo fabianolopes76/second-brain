@@ -123,7 +123,17 @@ class Job:
 
 JOB = Job()
 CFG = {"root": "", "scripts": "", "venv": str(Path.home() / "venvs/acervo"),
-       "lang": "auto", "lang_fallback": "por+eng"}
+       "vault": "", "lang": "auto", "lang_fallback": "por+eng"}
+
+
+def vault_destino(pasta: str = "") -> Path:
+    """O vault-alvo, na ordem: pasta explícita > vault configurado
+    (definitivo do Obsidian) > <root>/4-OBSIDIAN-VAULT (trabalho)."""
+    if pasta:
+        return Path(pasta)
+    if CFG.get("vault"):
+        return Path(CFG["vault"])
+    return Path(CFG["root"]) / "4-OBSIDIAN-VAULT"
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +423,7 @@ def progresso():
         r["limpo_md"] = sum(1 for f in limpo.rglob("*.md")
                             if not f.name.startswith(("RELATORIO", "_")))
 
-    vault = base / "4-OBSIDIAN-VAULT"
+    vault = vault_destino()   # definitivo configurado ou o de trabalho
     r["publicado"] = False
     if vault.is_dir():
         # mesmo critério do auditar_vault.py: templates/radar não são notas
@@ -776,7 +786,7 @@ def acao_publicar(pasta="", dry=True, force=False):
     if not origem.is_dir():
         return False, ("Pasta 3-MARKDOWN-LIMPO não existe — o que se publica "
                        "é o produto FINAL (Fases 3-4). Fatie/valide antes.")
-    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "4-OBSIDIAN-VAULT")
+    alvo = vault_destino(pasta)
     pub = Path(CFG["scripts"]) / "publicar.py"
     if not pub.exists():
         return False, "publicar.py não encontrado na pasta de scripts."
@@ -791,7 +801,7 @@ def acao_radar(pasta="", aplicar=False):
     """FASE 6: correlaciona os achados de Radar/ às notas do vault por
     identificador (lei/tema/súmula/processo) e monta a fila de revisão.
     Com aplicar=True, sinaliza as afetadas com status: A-conferir."""
-    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "4-OBSIDIAN-VAULT")
+    alvo = vault_destino(pasta)
     if not alvo.is_dir():
         return False, f"Pasta do vault não encontrada: {alvo}."
     rd = Path(CFG["scripts"]) / "radar.py"
@@ -806,7 +816,7 @@ def acao_radar(pasta="", aplicar=False):
 def acao_auditar_vault(pasta=""):
     """Audita o GRAFO do vault: fatias órfãs, partes inconsistentes, wikilinks
     quebrados, vocabulário que esconde notas dos painéis, áreas sem MOC."""
-    alvo = Path(pasta) if pasta else (Path(CFG["root"]) / "4-OBSIDIAN-VAULT")
+    alvo = vault_destino(pasta)
     if not alvo.is_dir():
         return False, (f"Pasta do vault não encontrada: {alvo}. "
                        "Publique o conteúdo no vault antes (Fase 5), ou "
@@ -965,6 +975,145 @@ def listar_fichas():
         except Exception:
             continue
     return out
+
+
+def verificar_vault(pasta: str = "") -> dict:
+    """Pré-voo de integração ao vault DEFINITIVO (read-only): o que já
+    existe lá, o que colidiria por NOME (wikilink do Obsidian é por nome,
+    não por caminho) e que estrutura falta para o pipeline operar."""
+    vault = vault_destino(pasta)
+    r = {"vault": str(vault), "existe": vault.is_dir(),
+         "eh_obsidian": (vault / ".obsidian").is_dir(),
+         "pre_existentes": 0, "invisiveis": 0,
+         "colisoes": [], "estrutura": {}, "mocs": []}
+    pastas_pipeline = set(taxonomia.PASTAS_PUBLICACAO.values()) | {
+        "00-Indices-MOCs", "99-Templates"}
+
+    # o que SERÁ publicado (stems do LIMPO) e as áreas em uso
+    limpo = Path(CFG["root"]) / "3-MARKDOWN-LIMPO" if CFG["root"] else None
+    stems_novos, areas = {}, set()
+    if limpo and limpo.is_dir():
+        for f in limpo.rglob("*.md"):
+            if f.name.startswith(("RELATORIO", "_")):
+                continue
+            stems_novos[f.stem.casefold()] = f.name
+            try:
+                a = frontmatter.ler(f.read_text(
+                    encoding="utf-8", errors="replace")).campos.get("area")
+                for x in (a if isinstance(a, list) else [a]):
+                    if not comum.vazio(x):
+                        areas.add(str(x))
+            except OSError:
+                continue
+    r["a_publicar"] = len(stems_novos)
+    r["areas"] = sorted(areas)
+
+    if vault.is_dir():
+        for f in vault.rglob("*.md"):
+            if (f.name.startswith(("RELATORIO", "_"))
+                    or any(p in comum.IGNORAR_PASTAS for p in f.parts)):
+                continue
+            rel = f.relative_to(vault)
+            fora_do_pipeline = rel.parts[0] not in pastas_pipeline
+            if fora_do_pipeline:
+                r["pre_existentes"] += 1
+                try:
+                    fm = frontmatter.ler(f.read_text(
+                        encoding="utf-8", errors="replace")).campos
+                    if str(fm.get("tipo") or "") != "MOC" and (
+                            comum.vazio(fm.get("area"))
+                            or str(fm.get("tipo") or "") not in taxonomia.TIPOS):
+                        r["invisiveis"] += 1
+                except OSError:
+                    pass
+            # colisão de NOME com o que será publicado (qualquer pasta)
+            chave = f.stem.casefold()
+            if chave in stems_novos and len(r["colisoes"]) < 50:
+                r["colisoes"].append({"novo": stems_novos[chave],
+                                      "ja_existe_em": str(rel)})
+
+    # estrutura mínima
+    r["estrutura"] = {
+        "00-Indices-MOCs": (vault / "00-Indices-MOCs").is_dir(),
+        "Radar": (vault / "00-Indices-MOCs" / "Radar").is_dir(),
+        "99-Templates": (vault / "99-Templates").is_dir(),
+    }
+    # MOC por área em uso: existe? tem marcadores (regenerável)?
+    # (slug IDÊNTICO ao do gerar_moc: sem acento — "Tributário"→MOC-Tributario)
+    import gerar_moc
+    for a in sorted(areas):
+        nome = "MOC-" + gerar_moc._slug(a)
+        p = vault / "00-Indices-MOCs" / f"{nome}.md"
+        item = {"area": a, "arquivo": f"{nome}.md", "existe": p.exists(),
+                "marcadores": False}
+        if p.exists():
+            try:
+                item["marcadores"] = "moc:auto:inicio" in p.read_text(
+                    encoding="utf-8", errors="replace")
+            except OSError:
+                pass
+        r["mocs"].append(item)
+    return r
+
+
+def preparar_vault(pasta: str = "") -> dict:
+    """Cria no vault DEFINITIVO só o que FALTA — nunca toca no que existe:
+    00-Indices-MOCs/, Radar/ (destrava o radar), 99-Templates/ (copiando os
+    modelos do projeto) e os MOCs das áreas em uso (gerar_moc cria ausentes
+    e RECUSA regenerar MOC sem marcadores — curadoria protegida)."""
+    pre = verificar_vault(pasta)
+    vault = Path(pre["vault"])
+    criados, pulados, orientacoes = [], [], []
+
+    for rel in ("00-Indices-MOCs", "00-Indices-MOCs/Radar", "99-Templates"):
+        p = vault / rel
+        if p.is_dir():
+            pulados.append(f"{rel}/ já existia")
+        else:
+            p.mkdir(parents=True, exist_ok=True)
+            criados.append(f"{rel}/")
+
+    # templates do projeto (só os que não existirem no destino)
+    origem_tpl = (Path(CFG["scripts"]).parent / "Roteiro-Base-Juridica"
+                  / "vault-inicial" / "99-Templates")
+    if not origem_tpl.is_dir():
+        origem_tpl = (Path(__file__).resolve().parent / "Roteiro-Base-Juridica"
+                      / "vault-inicial" / "99-Templates")
+    if origem_tpl.is_dir():
+        for t in sorted(origem_tpl.glob("*.md")):
+            alvo = vault / "99-Templates" / t.name
+            if alvo.exists():
+                pulados.append(f"99-Templates/{t.name} já existia")
+            else:
+                shutil.copy2(t, alvo)
+                criados.append(f"99-Templates/{t.name}")
+    else:
+        orientacoes.append("modelos de template não encontrados no projeto — "
+                           "copie os seus para 99-Templates/ se desejar")
+
+    # MOCs das áreas em uso
+    gm = Path(CFG["scripts"]) / "gerar_moc.py"
+    for m in pre["mocs"]:
+        if m["existe"] and m["marcadores"]:
+            pulados.append(f"{m['arquivo']} já existia (com marcadores)")
+            continue
+        if m["existe"] and not m["marcadores"]:
+            orientacoes.append(
+                f"{m['arquivo']} existe SEM marcadores — é curadoria sua e não "
+                f"foi tocado; para o painel regenerá-lo um dia: "
+                f"python3 gerar_moc.py \"{vault}\" --migrar "
+                f"00-Indices-MOCs/{m['arquivo']}")
+            continue
+        rcmd = subprocess.run(
+            ["python3", str(gm), str(vault), "--area", m["area"]],
+            capture_output=True, text=True, timeout=60)
+        if rcmd.returncode == 0:
+            criados.append(f"{m['arquivo']} (MOC da área {m['area']})")
+        else:
+            orientacoes.append(f"{m['arquivo']}: gerar_moc falhou — "
+                               f"{(rcmd.stdout or rcmd.stderr).strip()[:160]}")
+    return {"ok": True, "vault": str(vault), "criados": criados,
+            "pulados": pulados, "orientacoes": orientacoes}
 
 
 def relatorio_auditoria(pasta: str = "") -> dict:
@@ -1468,6 +1617,10 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             return self._send(200, json.dumps(
                 relatorio_auditoria(q.get("pasta", [""])[0]), ensure_ascii=False))
+        if u.path == "/api/vault_preflight":
+            q = parse_qs(u.query)
+            return self._send(200, json.dumps(
+                verificar_vault(q.get("pasta", [""])[0]), ensure_ascii=False))
         if u.path == "/api/ficha":
             q = parse_qs(u.query)
             p = _ficha_path(q.get("arq", [""])[0])
@@ -1535,6 +1688,13 @@ class Handler(BaseHTTPRequestHandler):
             if data.get("scripts"):
                 CFG["scripts"] = win_para_wsl(data["scripts"])
 
+            if data.get("vault"):
+                v_dest = win_para_wsl(data["vault"])
+                CFG["vault"] = v_dest
+                if not Path(v_dest).is_dir():
+                    avisos.append(f"Vault do Obsidian ainda não existe: {v_dest} "
+                                  "— será criado na primeira publicação.")
+
             if data.get("venv"):
                 novo_venv = win_para_wsl(data["venv"])
                 raiz = CFG.get("root") or ""
@@ -1588,6 +1748,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/ia_reverter":
             r = reverter_lote_ia()
+            return self._send(200, json.dumps(r, ensure_ascii=False))
+
+        if u.path == "/api/vault_preparar":
+            r = preparar_vault(data.get("pasta", ""))
             return self._send(200, json.dumps(r, ensure_ascii=False))
 
         if u.path == "/api/acao":
@@ -1982,6 +2146,13 @@ tr:hover td{background:var(--surf2)}
         </div>
       </div>
       <div class="campo">
+        <label title="para onde Publicar/Auditar vault/Radar apontam — pode já conter seu acervo antigo (nada é sobrescrito)">Vault do Obsidian (destino)</label>
+        <div class="inrow">
+          <input type="text" id="vault" placeholder="(vazio = 4-OBSIDIAN-VAULT dentro do acervo)">
+          <button class="bnav" onclick="abrirNav('vault','dir')">📁</button>
+        </div>
+      </div>
+      <div class="campo">
         <label>Idioma do OCR</label>
         <select id="lang" onchange="salvar({lang:lang.value})">
           <option value="auto">auto — detecta por arquivo</option>
@@ -2151,6 +2322,7 @@ tr:hover td{background:var(--surf2)}
           <span class="st" id="s8">—</span>
           <div class="acoes">
             <button class="bnav" onclick="abrirNav('vaultp','dir')">📁</button>
+            <button onclick="abrirVaultCheck()" title="pré-voo de integração: o que já existe no vault de destino, colisões de nome (wikilinks) e a estrutura que falta">🧭 Verificar destino</button>
             <button data-a onclick="acao('publicar',{pasta:vaultp.value,dry:true})">Simular</button>
             <button data-a class="primary" onclick="acao('publicar',{pasta:vaultp.value,dry:false})">Publicar</button>
           </div>
@@ -2247,6 +2419,18 @@ tr:hover td{background:var(--surf2)}
   <div class="sov-body">
     <p class="sov-dica" id="asovInfo">carregando…</p>
     <div id="asovItens"></div>
+  </div>
+</aside>
+
+<!-- SLIDEOVER · VAULT DE DESTINO (pré-voo) -->
+<div class="sov-bg" id="vsovBg" onclick="fecharVaultCheck()"></div>
+<aside class="sover fichas" id="vsov" aria-label="Vault de destino">
+  <div class="sov-head">
+    <h2 style="font-size:14px">🧭 Vault de destino — pré-voo de integração</h2>
+    <button class="fechar" onclick="fecharVaultCheck()" title="fechar (Esc)">✕</button></div>
+  <div class="sov-body">
+    <p class="sov-dica" id="vsovInfo">verificando…</p>
+    <div id="vsovItens"></div>
   </div>
 </aside>
 
@@ -2539,6 +2723,7 @@ async function salvar(campos){
     if(root.value)    corpo.root    = root.value;
     if(scripts.value) corpo.scripts = scripts.value;
     if(venv.value)    corpo.venv    = venv.value;
+    if(vault.value)   corpo.vault   = vault.value;
     if(lang.value)    corpo.lang    = lang.value;
   }
   const r = await fetch('/api/config',{method:'POST',
@@ -2552,7 +2737,7 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); }
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); fecharVaultCheck(); }
 });
 iaBg.addEventListener('click', e => { if(e.target === iaBg) fecharIA(); });
 
@@ -2863,6 +3048,63 @@ async function reverterIA(){
   estado();
 }
 
+/* ---------- vault de destino: pré-voo de integração + preparo ---------- */
+async function abrirVaultCheck(){
+  vsovBg.classList.add('on'); vsov.classList.add('on');
+  vsovInfo.textContent = 'verificando o destino…';
+  vsovItens.innerHTML = '';
+  const pasta = (typeof vaultp !== 'undefined' && vaultp.value) ? vaultp.value : '';
+  const d = await (await fetch('/api/vault_preflight?pasta='+encodeURIComponent(pasta))).json();
+  vsovInfo.innerHTML = `<b>${esc(d.vault)}</b><br>` +
+    (d.existe ? (d.eh_obsidian ? '✓ vault do Obsidian detectado (.obsidian presente)'
+                               : '✓ pasta existe (o Obsidian a reconhece ao abrir como vault)')
+              : '○ ainda não existe — será criada na publicação/preparo');
+  let html = '';
+  html += `<div class="fgrupo">Conteúdo pré-existente</div><div class="fitem"><div class="fdet">`+
+    (d.pre_existentes
+      ? `<b>${d.pre_existentes}</b> nota(s) suas já vivem fora das pastas do pipeline — <b>nada nelas será tocado</b>.`+
+        (d.invisiveis ? `<br><span class="rev">⚠ ${d.invisiveis} delas estão <b>invisíveis aos painéis</b> (sem area/tipo do vocabulário) — rode Auditar vault (8) para a lista; catalogá-las é opcional e pode ser feito aos poucos.</span>` : `<br><span class="pok">✓ todas com area/tipo visíveis aos painéis.</span>`)
+      : 'nenhuma nota pré-existente fora das pastas do pipeline.') + `</div></div>`;
+  html += `<div class="fgrupo ${d.colisoes.length?'warn':''}">Colisões de nome (wikilink) — ${d.colisoes.length}</div>`;
+  if(d.colisoes.length){
+    html += `<div class="fitem"><div class="fdet"><span class="rev">O Obsidian resolve links por NOME: nome repetido em pastas diferentes gera ambiguidade. Publicar não sobrescreve nada — mas o Auditar vault acusará. Se preferir, renomeie o mestre no 2-MARKDOWN-BRUTO e refatie.</span><br>`+
+      d.colisoes.map(c=>`• <b>${esc(c.novo)}</b> ↔ já existe em <i>${esc(c.ja_existe_em)}</i>`).join('<br>') + `</div></div>`;
+  } else {
+    html += `<div class="fitem"><div class="fdet"><span class="pok">✓ nenhum nome do que será publicado (${d.a_publicar}) colide com o acervo existente.</span></div></div>`;
+  }
+  const est = d.estrutura || {};
+  const faltaEstrutura = !est['00-Indices-MOCs'] || !est['Radar'] || !est['99-Templates']
+    || (d.mocs||[]).some(m=>!m.existe);
+  html += `<div class="fgrupo ${faltaEstrutura?'warn':'ok'}">Estrutura do pipeline no destino</div><div class="fitem"><div class="fdet">`+
+    ['00-Indices-MOCs','Radar','99-Templates'].map(k=>
+      (est[k]?`<span class="pok">✓ ${k}/</span>`:`<span class="rev">✗ ${k}/ ausente</span>`)).join('<br>') +
+    (d.mocs||[]).map(m=> '<br>' + (m.existe
+        ? (m.marcadores ? `<span class="pok">✓ ${esc(m.arquivo)} (área ${esc(m.area)})</span>`
+                        : `<span class="rev">⚠ ${esc(m.arquivo)} existe SEM marcadores — curadoria sua, não será tocado</span>`)
+        : `<span class="rev">✗ ${esc(m.arquivo)} ausente (área ${esc(m.area)})</span>`)).join('') +
+    `</div></div>`;
+  if(faltaEstrutura){
+    html += `<div style="margin-top:10px"><button class="primary" onclick="prepararVault()" style="width:100%">🧱 Preparar vault — cria SÓ o que falta (nunca toca no existente)</button></div>`;
+  }
+  html += `<div id="vsovPrep" style="margin-top:10px"></div>`;
+  vsovItens.innerHTML = html;
+}
+async function prepararVault(){
+  const alvo = document.getElementById('vsovPrep');
+  alvo.textContent = 'preparando…';
+  const pasta = (typeof vaultp !== 'undefined' && vaultp.value) ? vaultp.value : '';
+  const r = await (await fetch('/api/vault_preparar',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pasta})})).json();
+  const resultado =
+    (r.criados.length ? `<div class="fb-bloco"><b class="t" style="color:var(--ok)">✔ Criados</b>`+r.criados.map(esc).join('<br>')+`</div>` : '') +
+    (r.orientacoes.length ? `<div class="fb-bloco"><b class="t" style="color:var(--warn)">⚠ Atenção</b>`+r.orientacoes.map(esc).join('<br>')+`</div>` : '') +
+    (r.pulados.length ? `<div class="fb-bloco" style="opacity:.8"><b class="t" style="color:var(--muted)">· Já existiam (intocados)</b>`+r.pulados.map(esc).join('<br>')+`</div>` : '');
+  await abrirVaultCheck();   // reavalia a estrutura (checklist atualizado)…
+  document.getElementById('vsovPrep').innerHTML = resultado;   // …sem perder o recibo
+}
+function fecharVaultCheck(){ vsovBg.classList.remove('on'); vsov.classList.remove('on'); }
+
 /* ---------- relatório de auditoria: triagem do grave ao irrelevante ---------- */
 async function abrirAuditoria(){
   asovBg.classList.add('on'); asov.classList.add('on');
@@ -3098,6 +3340,10 @@ async function estado(){
   if(document.activeElement.id !== 'root' && s.cfg.root && !root.value) root.value = s.cfg.root;
   if(!scripts.value) scripts.value = s.cfg.scripts || '';
   if(!venv.value) venv.value = s.cfg.venv || '';
+  if(!vault.value && s.cfg.vault) vault.value = s.cfg.vault;
+  if(typeof vaultp !== 'undefined')
+    vaultp.placeholder = s.cfg.vault ? ('(padrão: '+s.cfg.vault+')')
+                                     : '(padrão: 4-OBSIDIAN-VAULT)';
   if(s.cfg.lang && lang.value !== s.cfg.lang) lang.value = s.cfg.lang;
   rootWsl.textContent = s.cfg.root || '';
   rootWsl.title = s.cfg.root || '';

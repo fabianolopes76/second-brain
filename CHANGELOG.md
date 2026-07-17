@@ -5,6 +5,26 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.19.0] — 2026-07-17 · Vault definitivo do Obsidian: entrega direta, pré-voo e preparo seguro
+
+### Adicionado
+- **Campo persistente "Vault do Obsidian (destino)"** na Configuração:
+  Publicar, Auditar vault e Radar passam a apontar para o SEU vault
+  (em qualquer pasta), lembrado entre reinícios. Vazio = o
+  `4-OBSIDIAN-VAULT` de trabalho, como antes.
+- **🧭 Verificar destino** (card Publicar): pré-voo de integração
+  read-only — conteúdo pré-existente (e quantas notas estão invisíveis
+  aos painéis), **colisões de nome** com o que será publicado (wikilink
+  do Obsidian é por NOME; nome repetido = link ambíguo) e a estrutura
+  que falta (MOCs por área, Radar/, templates).
+- **🧱 Preparar vault**: cria SÓ o que falta — MOCs das áreas em uso
+  (via gerar_moc, que cria ausentes e RECUSA tocar MOC sem marcadores:
+  curadoria protegida), `Radar/` (destrava o radar) e `99-Templates/`.
+  Idempotente; nunca altera o que existe.
+- **`publicar.py`**: seção "AMBIGUIDADE DE NOME (wikilinks)" no dry-run
+  e no relatório — avisa nota a nota publicada cujo nome já existe em
+  outra pasta do vault (nada é bloqueado; o auditar_vault é o juiz).
+
 ## [3.18.0] — 2026-07-17 · Card Publicar fala uma coisa de cada vez
 
 ### Alterado

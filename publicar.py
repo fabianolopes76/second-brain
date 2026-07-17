@@ -37,7 +37,7 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
-from comum import alvo_wikilink, vazio
+from comum import IGNORAR_PASTAS as IGNORAR, alvo_wikilink, vazio
 from auditar_acervo import auditar, nota as nota_auditoria
 
 
@@ -83,6 +83,18 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
             rel, motivo = destino_de(fm, f.stem)
             if rel is not None:
                 destino_indice[f.stem] = rel
+
+    # AMBIGUIDADE DE NOME: o Obsidian resolve wikilinks por NOME, não por
+    # caminho — publicar X.md em 01-Doutrina/ com um X.md pré-existente em
+    # outra pasta cria links ambíguos. Não bloqueia (o vault vence e nada
+    # é sobrescrito; o auditar_vault é o juiz), mas AVISA aqui, antes.
+    stems_vault = {}
+    if vault.is_dir():
+        for f_v in vault.rglob("*.md"):
+            if (f_v.name.startswith(("RELATORIO", "_"))
+                    or any(p in IGNORAR for p in f_v.parts)):
+                continue
+            stems_vault.setdefault(f_v.stem.casefold(), f_v.relative_to(vault))
 
     resultado = Counter()
     detalhes = defaultdict(list)   # categoria → linhas p/ relatório
@@ -134,6 +146,13 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         alvo = vault / rel / f.name
         etiqueta = f"{rel}/{f.name}"
 
+        ja = stems_vault.get(f.stem.casefold())
+        if ja is not None and Path(str(ja)) != (Path(str(rel)) / f.name):
+            detalhes["ambiguidade"].append(
+                f"{f.name} — nome já existe em {ja} (wikilink ambíguo no "
+                "Obsidian; nada é sobrescrito — renomeie no bruto e refatie, "
+                "ou conviva e o auditar_vault acusará)")
+
         # ── idempotência + TRAVA 3: o vault vence ──
         if alvo.exists():
             if alvo.read_text(encoding="utf-8", errors="replace") == p["texto"]:
@@ -184,6 +203,13 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
             excedente = len(detalhes[cat]) - LIMITE
             if excedente > 0:
                 print(f"    … e mais {excedente} — lista completa no RELATORIO-PUBLICACAO.md")
+    if detalhes["ambiguidade"]:
+        print(f"\nAMBIGUIDADE DE NOME (wikilinks) — {len(detalhes['ambiguidade'])} aviso(s):")
+        for linha in detalhes["ambiguidade"][:LIMITE]:
+            print(f"    ⚠ {linha}")
+        if len(detalhes["ambiguidade"]) > LIMITE:
+            print(f"    … e mais {len(detalhes['ambiguidade']) - LIMITE} — "
+                  "lista completa no RELATORIO-PUBLICACAO.md")
 
     # ── relatório no vault (a Fase 5 do WORKFLOW pede exatamente isto) ──
     if not dry:
@@ -205,6 +231,9 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
             if detalhes[cat]:
                 L += ["", f"## ✗ {cat.capitalize()}s", ""]
                 L += [f"- {x}" for x in detalhes[cat]]
+        if detalhes["ambiguidade"]:
+            L += ["", "## ⚠ Ambiguidade de nome (wikilinks do Obsidian)", ""]
+            L += [f"- {x}" for x in detalhes["ambiguidade"]]
         L += ["", "> Publicação é COPIAR: 3-MARKDOWN-LIMPO segue como estágio de "
                   "trabalho. Em conflito, o vault vence (é onde vive a curadoria). "
                   "Depois de publicar, rode auditar_vault.py."]
