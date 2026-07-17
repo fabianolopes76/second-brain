@@ -5,6 +5,17 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.19.1] — 2026-07-17 · Migrar marcadores do MOC vira botão
+
+### Adicionado
+- **🔁 Migrar marcadores** no pré-voo do vault: o MOC de curadoria sem
+  marcadores ganhou um botão opt-in que insere os `moc:auto` **sem
+  alterar o conteúdo** (verificado byte a byte) — antes a orientação
+  mandava um comando de terminal, contra a promessa do painel. MOC com
+  estrutura desconhecida continua recusado com o motivo (o migrador não
+  adivinha); já migrado é idempotente. API `POST /api/moc_migrar`
+  (aceita só `MOC-*.md`, imune a path traversal).
+
 ## [3.19.0] — 2026-07-17 · Vault definitivo do Obsidian: entrega direta, pré-voo e preparo seguro
 
 ### Adicionado

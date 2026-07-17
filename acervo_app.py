@@ -1754,6 +1754,25 @@ class Handler(BaseHTTPRequestHandler):
             r = preparar_vault(data.get("pasta", ""))
             return self._send(200, json.dumps(r, ensure_ascii=False))
 
+        if u.path == "/api/moc_migrar":
+            # opt-in consciente: insere os marcadores moc:auto num MOC de
+            # curadoria SEM alterar o conteúdo — a partir daí o painel pode
+            # regenerar o bloco auto preservando o resto (gerar_moc --migrar)
+            nome = Path(str(data.get("arquivo") or "")).name
+            if not (nome.startswith("MOC-") and nome.endswith(".md")):
+                return self._send(200, json.dumps(
+                    {"ok": False, "msg": f"arquivo inválido: {nome}"}))
+            vault = vault_destino(data.get("pasta", ""))
+            gm = Path(CFG["scripts"]) / "gerar_moc.py"
+            rcmd = subprocess.run(
+                ["python3", str(gm), str(vault),
+                 "--migrar", f"00-Indices-MOCs/{nome}"],
+                capture_output=True, text=True, timeout=60)
+            saida = (rcmd.stdout or rcmd.stderr).strip()
+            return self._send(200, json.dumps(
+                {"ok": rcmd.returncode == 0, "msg": saida[:400]},
+                ensure_ascii=False))
+
         if u.path == "/api/acao":
             a = data.get("acao")
             if a != "arquivo" and (not CFG["root"] or not Path(CFG["root"]).is_dir()):
@@ -3080,7 +3099,8 @@ async function abrirVaultCheck(){
       (est[k]?`<span class="pok">✓ ${k}/</span>`:`<span class="rev">✗ ${k}/ ausente</span>`)).join('<br>') +
     (d.mocs||[]).map(m=> '<br>' + (m.existe
         ? (m.marcadores ? `<span class="pok">✓ ${esc(m.arquivo)} (área ${esc(m.area)})</span>`
-                        : `<span class="rev">⚠ ${esc(m.arquivo)} existe SEM marcadores — curadoria sua, não será tocado</span>`)
+                        : `<span class="rev">⚠ ${esc(m.arquivo)} existe SEM marcadores — curadoria sua, não será tocado</span> `+
+                          `<button class="bnav" onclick="migrarMoc(${q(m.arquivo)})" title="insere os marcadores moc:auto SEM alterar o conteúdo — o painel passa a poder atualizar os painéis automáticos preservando a sua curadoria">🔁 Migrar marcadores</button>`)
         : `<span class="rev">✗ ${esc(m.arquivo)} ausente (área ${esc(m.area)})</span>`)).join('') +
     `</div></div>`;
   if(faltaEstrutura){
@@ -3102,6 +3122,15 @@ async function prepararVault(){
     (r.pulados.length ? `<div class="fb-bloco" style="opacity:.8"><b class="t" style="color:var(--muted)">· Já existiam (intocados)</b>`+r.pulados.map(esc).join('<br>')+`</div>` : '');
   await abrirVaultCheck();   // reavalia a estrutura (checklist atualizado)…
   document.getElementById('vsovPrep').innerHTML = resultado;   // …sem perder o recibo
+}
+async function migrarMoc(arquivo){
+  const pasta = (typeof vaultp !== 'undefined' && vaultp.value) ? vaultp.value : '';
+  const r = await (await fetch('/api/moc_migrar',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pasta, arquivo})})).json();
+  await abrirVaultCheck();
+  document.getElementById('vsovPrep').innerHTML =
+    `<div class="fb-bloco"><b class="t" style="color:${r.ok?'var(--ok)':'var(--err)'}">${r.ok?'✔ Marcadores migrados':'✗ Falhou'}</b>${esc(r.msg)}</div>`;
 }
 function fecharVaultCheck(){ vsovBg.classList.remove('on'); vsov.classList.remove('on'); }
 

@@ -161,7 +161,7 @@ O vault de verdade pode estar em **outra pasta** e **já conter seu acervo antig
 
 1. **Configuração (01)** → campo **"Vault do Obsidian (destino)"** → 📁 escolha a pasta do seu vault → **Definir**. Fica **lembrado**; Publicar, Auditar vault e Radar passam a apontar para lá.
 2. No card **Publicar**, clique **🧭 Verificar destino** — o pré-voo mostra, sem tocar em nada: quantas notas suas já existem (e quantas estão **invisíveis aos painéis** por falta de area/tipo), as **colisões de nome** com o que será publicado (o Obsidian resolve links por *nome* — nome repetido = link ambíguo) e a **estrutura que falta** (MOCs das áreas, pasta Radar/, templates).
-3. Se faltar estrutura: **🧱 Preparar vault** — cria **só o que falta**. MOC seu, feito à mão, **nunca é tocado** (aparece com a orientação para migrá-lo quando você quiser que o painel o regenere).
+3. Se faltar estrutura: **🧱 Preparar vault** — cria **só o que falta**. MOC seu, feito à mão, **nunca é tocado**: aparece com o botão **🔁 Migrar marcadores**, que (se você quiser) insere as marcas `moc:auto` **sem alterar o conteúdo** — a partir daí o painel pode atualizar os painéis automáticos preservando a sua curadoria.
 4. **Simular** → o plano + os avisos de ambiguidade de nome → **Publicar**. Regras de sempre: nada é sobrescrito, nada é apagado, reprovada fica retida, em conflito **o seu vault vence**.
 5. **Auditar vault (8)** no destino: mostra o grafo íntegro e lista o que do seu acervo antigo está invisível aos painéis — catalogar o legado é opcional e pode ser feito aos poucos (mesma lógica das fichas).
 
