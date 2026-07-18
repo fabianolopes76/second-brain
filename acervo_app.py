@@ -33,6 +33,7 @@ Opções:
 
 import argparse
 import csv
+import hashlib
 import html
 import io
 import json
@@ -1503,6 +1504,232 @@ def reverter_lote_ia():
     return {"ok": True, "restaurados": restaurados}
 
 
+# ---------------------------------------------------------------------------
+# Radar por IA — o Módulo E Nível 1 operado PELO PAINEL: o prompt (com o
+# fontes.md, as áreas e as normas que o acervo cita) vai para qualquer IA
+# com busca na web; a resposta volta em JSON e vira achados em Radar/ —
+# validados, nunca sobrescrevendo, com undo da última leva. A correlação
+# achado→notas continua 100% determinística (radar.py).
+# ---------------------------------------------------------------------------
+_TIPOS_ACHADO = ("legislacao", "jurisprudencia", "noticia")
+
+
+def _radar_dir() -> Path:
+    return vault_destino("") / "00-Indices-MOCs" / "Radar"
+
+
+def gerar_prompt_radar():
+    vault = vault_destino("")
+    fontes = ""
+    try:
+        fontes = (vault / "00-Indices-MOCs" / "fontes.md").read_text(
+            encoding="utf-8", errors="replace")[:6000]
+    except OSError:
+        pass
+    # o que o acervo REALMENTE cita: catálogo do Conectar (1 arquivo, rápido)
+    # + hubs de norma; áreas pelos MOCs existentes
+    normas, areas = [], []
+    try:
+        cat = (vault / "00-Indices-MOCs" / "CATALOGO.md").read_text(
+            encoding="utf-8", errors="replace")
+        vistos = set()
+        for m in re.finditer(r"normas mais distintivas: (.+)", cat):
+            for n in m.group(1).split(","):
+                n = n.strip()
+                if n and n not in vistos:
+                    vistos.add(n)
+                    normas.append(n)
+    except OSError:
+        pass
+    try:
+        for p in sorted((vault / "00-Indices-MOCs" / "Conexoes").glob("*.md")):
+            n = p.stem.replace("-", " ")
+            if n not in normas:
+                normas.append(n)
+    except OSError:
+        pass
+    try:
+        for p in sorted((vault / "00-Indices-MOCs").glob("MOC-*.md")):
+            areas.append(p.stem[4:].replace("-", " "))
+    except OSError:
+        pass
+    hoje = time.strftime("%d/%m/%Y")
+    P = []
+    P.append(
+        "Você é o radar jurídico de um escritório. Pesquise NA WEB, em "
+        "FONTES OFICIAIS, as novidades dos últimos 30 dias (hoje é "
+        f"{hoje}) que interessem ao acervo descrito abaixo: alterações "
+        "legislativas, novas súmulas/teses (repetitivos, repercussão "
+        "geral), decisões relevantes e notícias jurídicas de peso.")
+    if areas:
+        P.append("ÁREAS DO ACERVO: " + ", ".join(areas) + ".")
+    if normas:
+        P.append("PRIORIDADE MÁXIMA — o acervo cita estas normas e "
+                 "precedentes; qualquer novidade sobre eles interessa: "
+                 + "; ".join(normas[:40]) + ".")
+    P.append(
+        "REGRAS: (1) fonte oficial manda — notícia é alerta, não "
+        "confirmação; (2) PARAFRASEIE — não copie inteiros teores nem "
+        "ementas extensas; (3) só inclua o que tiver fonte verificável "
+        "com link; NÃO invente; se não houver novidades, devolva a lista "
+        "vazia.")
+    if fontes:
+        P.append("FONTES PREFERENCIAIS DO ESCRITÓRIO (fontes.md do "
+                 "vault):\n" + fontes)
+    P.append(
+        "FORMATO DA RESPOSTA — apenas este JSON, sem comentários:\n"
+        '{"achados": [{"titulo": "resumo curto do que mudou",\n'
+        '  "tipo": "legislacao" | "jurisprudencia" | "noticia",\n'
+        '  "area": "uma das áreas do acervo (ou vazio)",\n'
+        '  "data": "AAAA-MM-DD (da publicação oficial)",\n'
+        '  "fonte": "ex.: DOU, STJ, Planalto",\n'
+        '  "url": "https://... (link da fonte)",\n'
+        '  "resumo": "2 a 4 linhas, com suas palavras",\n'
+        '  "identificadores": "Lei 14.999; Súmula 999; Tema 1234 — os '
+        'números citados, neste formato",\n'
+        '  "alerta": true}]}\n'
+        'Use "alerta": true SOMENTE quando a novidade sugerir mudança de '
+        "norma ou de entendimento que afete notas do acervo.")
+    return {"prompt": "\n\n".join(P), "normas": len(normas),
+            "tem_fontes": bool(fontes)}
+
+
+def aplicar_lote_radar(resposta: str):
+    rdir = _radar_dir()
+    try:
+        dados = _extrair_json_ia(resposta)
+    except ValueError as e:
+        return {"ok": False, "msg": f"Resposta inválida: {e}"}
+    achados = dados.get("achados")
+    if not isinstance(achados, list):
+        return {"ok": False,
+                "msg": 'não encontrei a lista "achados" no JSON — copie a '
+                       "resposta inteira da IA, no formato pedido."}
+    if not achados:
+        return {"ok": True, "criados": [], "rejeitados": [],
+                "avisos": ["a IA não encontrou novidades — lista vazia."]}
+    areas_ok = set(_vocab()["areas"])
+    criados, rejeitados, avisos, leva = [], [], [], []
+    for i, a in enumerate(achados, 1):
+        if not isinstance(a, dict):
+            rejeitados.append({"arquivo": f"achado {i}",
+                               "motivo": "não é um objeto JSON"})
+            continue
+        titulo = str(a.get("titulo") or "").strip()
+        resumo = str(a.get("resumo") or "").strip()
+        if not titulo or not resumo:
+            rejeitados.append({"arquivo": titulo or f"achado {i}",
+                               "motivo": "sem título ou sem resumo"})
+            continue
+        url = str(a.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            # sem link verificável não entra: a regra nº 1 do radar é
+            # fonte oficial — achado sem fonte é boato
+            rejeitados.append({"arquivo": titulo,
+                               "motivo": "sem URL de fonte verificável"})
+            continue
+        data = str(a.get("data") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data):
+            avisos.append(f"{titulo}: data '{data}' fora de AAAA-MM-DD — "
+                          "usei a de hoje")
+            data = time.strftime("%Y-%m-%d")
+        tipo_a = str(a.get("tipo") or "").strip().lower()
+        if tipo_a not in _TIPOS_ACHADO:
+            avisos.append(f"{titulo}: tipo '{tipo_a}' desconhecido — "
+                          "registrei como 'noticia'")
+            tipo_a = "noticia"
+        area = str(a.get("area") or "").strip()
+        if area and area not in areas_ok:
+            avisos.append(f"{titulo}: área '{area}' fora do vocabulário — "
+                          "ignorada")
+            area = ""
+        idents = str(a.get("identificadores") or "").strip()
+        fonte = str(a.get("fonte") or "").strip()
+        alerta = bool(a.get("alerta"))
+        # nome: data + slug do título (anti-traversal por construção)
+        slug = re.sub(r"[^\w\-]+", "-", titulo)[:60].strip("-") or f"achado-{i}"
+        destino = rdir / tipo_a / f"{data}_{slug}.md"
+        if destino.exists():
+            rejeitados.append({"arquivo": destino.name,
+                               "motivo": "já existe em Radar/ — não "
+                                         "sobrescrevo"})
+            continue
+        corpo = ["---",
+                 f'titulo: "{titulo.replace(chr(34), chr(39))}"',
+                 f"tipo_achado: {tipo_a}",
+                 f"area: [{area}]" if area else "area: []",
+                 f"data: {data}",
+                 f'fonte: "{fonte.replace(chr(34), chr(39))}"',
+                 f"url: {url}",
+                 f"alerta: {'true' if alerta else 'false'}",
+                 "---", "",
+                 f"# {titulo}", "",
+                 resumo, ""]
+        if alerta:
+            corpo += ["> [!warning] ⚠️ Possível mudança de norma ou "
+                      "entendimento — confirme na fonte oficial antes de "
+                      "reclassificar qualquer nota.", ""]
+        if idents:
+            corpo += [f"Identificadores: {idents}", ""]
+        corpo += [f"Fonte: {fonte or '(informar)'} — {url}", ""]
+        texto = "\n".join(corpo)
+        try:
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            destino.write_text(texto, encoding="utf-8")
+        except OSError as e:
+            rejeitados.append({"arquivo": destino.name,
+                               "motivo": f"falha de disco: {e.strerror or e}"})
+            continue
+        leva.append([str(destino.relative_to(rdir)),
+                     hashlib.md5(texto.encode()).hexdigest()])
+        criados.append({"arquivo": str(destino.relative_to(rdir)),
+                        "alerta": alerta})
+    if leva:
+        # manifesto da leva: é ele que o "↩ Reverter" usa — e só some a
+        # leva anterior quando ESTA gravou algo (resposta toda inválida
+        # não destrói o undo)
+        try:
+            (rdir / ".ultima_leva_ia.json").write_text(
+                json.dumps(leva, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            avisos.append("manifesto do undo não gravado — ↩ Reverter "
+                          "não cobrirá esta leva")
+    return {"ok": True, "criados": criados, "rejeitados": rejeitados,
+            "avisos": avisos}
+
+
+def reverter_lote_radar():
+    """Remove os achados da ÚLTIMA leva aplicada — e SÓ eles, e só se
+    ninguém os editou depois (hash confere)."""
+    rdir = _radar_dir()
+    man = rdir / ".ultima_leva_ia.json"
+    try:
+        leva = json.loads(man.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"ok": False, "msg": "não há leva do Radar por IA para "
+                                    "desfazer."}
+    removidos, mantidos = [], []
+    for item in leva:
+        rel, digest = str(item[0]), str(item[1])
+        p = (rdir / rel)
+        if ".." in rel or rel.startswith("/") or not p.exists():
+            continue
+        try:
+            if hashlib.md5(p.read_bytes()).hexdigest() != digest:
+                mantidos.append(f"{rel} — editado depois da aplicação; "
+                                "mantive")
+                continue
+            p.unlink()
+            removidos.append(rel)
+        except OSError as e:
+            mantidos.append(f"{rel} — {e.strerror or e}")
+    try:
+        man.unlink()
+    except OSError:
+        pass
+    return {"ok": True, "removidos": removidos, "mantidos": mantidos}
+
+
 # Prontidão REAL de publicação para o card 7 (dot "7"). "N arquivos no
 # limpo" não diz nada: o publicar tem trava de qualidade (REPROVADO não
 # entra; fatia fica retida com o índice) — o card antecipa isso auditando
@@ -1684,6 +1911,9 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             return self._send(200, json.dumps(
                 relatorio_auditoria(q.get("pasta", [""])[0]), ensure_ascii=False))
+        if u.path == "/api/radar_prompt":
+            return self._send(200, json.dumps(gerar_prompt_radar(),
+                                              ensure_ascii=False))
         if u.path == "/api/vault_preflight":
             q = parse_qs(u.query)
             return self._send(200, json.dumps(
@@ -1809,6 +2039,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/ia_reverter":
             r = reverter_lote_ia()
+            return self._send(200, json.dumps(r, ensure_ascii=False))
+
+        if u.path == "/api/radar_aplicar":
+            r = aplicar_lote_radar(data.get("resposta", ""))
+            return self._send(200, json.dumps(r, ensure_ascii=False))
+
+        if u.path == "/api/radar_reverter":
+            r = reverter_lote_radar()
             return self._send(200, json.dumps(r, ensure_ascii=False))
 
         if u.path == "/api/vault_preparar":
@@ -2465,6 +2703,7 @@ tr:hover td{background:var(--surf2)}
           <span class="desc">Correlaciona os achados de <b>Radar/</b> (Cowork, Módulo E) às notas que os citam — por identificador, não por palpite.</span>
           <span class="st" id="s10">—</span>
           <div class="acoes">
+            <button onclick="abrirRadarIA()" title="gera um prompt de monitoramento (com o seu fontes.md e as normas do acervo) para colar em qualquer IA com busca na web; a resposta vira achados em Radar/ — com validação e undo">📡 Buscar novidades com IA</button>
             <button data-a onclick="acao('radar',{pasta:vaultp.value,aplicar:false})">Fila de revisão</button>
             <button data-a class="primary" onclick="acao('radar',{pasta:vaultp.value,aplicar:true})">Sinalizar A-conferir</button>
           </div>
@@ -2572,6 +2811,28 @@ tr:hover td{background:var(--surf2)}
       <button onclick="reverterIA()" title="restaura os arquivos como estavam antes da última aplicação">↩ Reverter última aplicação</button>
     </div>
     <div id="iaResultado" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- MODAL · RADAR POR IA (Módulo E Nível 1 pelo painel) -->
+<div class="imod-bg" id="radBg">
+  <div class="imod" id="radMod" role="dialog" aria-label="Radar por IA" style="max-width:760px">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <h3 style="flex:1">📡 Radar — buscar novidades com IA</h3>
+      <button class="fechar" onclick="fecharRadarIA()" title="fechar (Esc)">✕</button></div>
+    <p><b>1.</b> Copie o prompt e cole numa IA <b>com busca na web</b> (Gemini, ChatGPT, Claude…). Ele já leva o seu <code>fontes.md</code>, as áreas e as normas que o acervo cita — e as regras: fonte oficial, parafrasear, nada inventado.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
+      <button class="primary" id="radCopiar" onclick="copiar(this, RAD_PROMPT)">📋 Copiar o prompt</button>
+      <span class="sov-dica" id="radInfo" style="margin:0"></span>
+    </div>
+    <textarea id="radPrompt" readonly rows="7" style="width:100%;font:11px var(--mono);resize:vertical"></textarea>
+    <p style="margin-top:14px"><b>2.</b> Cole a resposta (o JSON) e aplique. Cada achado é <b>validado</b> (sem URL de fonte = rejeitado) e gravado em <code>Radar/</code> — nada é sobrescrito, e ↩ desfaz a leva. Depois: <b>Fila de revisão</b>.</p>
+    <textarea id="radResposta" rows="6" style="width:100%;font:11px var(--mono);resize:vertical" placeholder='{"achados": [{"titulo": "...", "tipo": "legislacao", "url": "https://...", ...}]}'></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="primary" onclick="aplicarRadarIA()" style="flex:1">✔ Validar e gravar em Radar/</button>
+      <button onclick="reverterRadarIA()" title="remove os achados da última leva aplicada (só os que ninguém editou depois)">↩ Reverter última leva</button>
+    </div>
+    <div id="radResultado" style="margin-top:10px"></div>
   </div>
 </div>
 
@@ -2839,9 +3100,10 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); fecharVaultCheck(); }
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); fecharRadarIA(); fecharVaultCheck(); }
 });
 iaBg.addEventListener('click', e => { if(e.target === iaBg) fecharIA(); });
+radBg.addEventListener('click', e => { if(e.target === radBg) fecharRadarIA(); });
 
 /* ---------- modal "o que faz esta etapa" ---------- */
 const INFO = {
@@ -2896,10 +3158,11 @@ const INFO = {
      ['Conectar','grava os blocos nos índices (entre marcadores <code>conectar:auto</code> — o resto da nota é seu), cria/atualiza os hubs em <code>Conexoes/</code> e o catálogo. Re-rodar é seguro: só muda o que mudou; <b>nada é apagado</b>.']],
   s:'Blocos de relações nos índices, hubs de norma em <code>00-Indices-MOCs/Conexoes/</code>, <code>CATALOGO.md</code> e <b>RELATORIO-CONEXOES.md</b>. Obra sem nenhum identificador aparece como "isolada" — a fase futura de <b>temas por IA</b> conecta essas.'},
  e10:{t:'9 · Radar — o cérebro continua vivo',
-  o:'As novidades (leis alteradas, julgados novos) coletadas pelo assistente na pasta <code>Radar/</code> são cruzadas com as notas do acervo que as citam — por <b>identificador forte</b> (Lei nº, Tema, Súmula, nº CNJ), não por palpite. O radar <b>sinaliza</b>; a decisão de reclassificar é sempre sua.',
-  a:[['Fila de revisão','roda <code>radar.py</code>: correlaciona os achados novos e grava <code>RELATORIO-RADAR.md</code> com a fila do que conferir.'],
+  o:'Duas metades: a <b>descoberta</b> (ir às fontes, achar novidades) é trabalho de IA com busca na web — o botão 📡 gera o prompt e aplica a resposta como achados em <code>Radar/</code>. A <b>correlação</b> achado→notas do acervo é determinística (<code>radar.py</code>), por <b>identificador forte</b> (Lei nº, Tema, Súmula, nº CNJ), não por palpite. O radar <b>sinaliza</b>; a decisão de reclassificar é sempre sua.',
+  a:[['📡 Buscar novidades com IA','gera um prompt de monitoramento (com o seu <code>fontes.md</code>, as áreas e as normas que o acervo cita) para colar em qualquer IA <b>com busca na web</b>; a resposta em JSON volta pelo modal e vira achados em <code>Radar/</code> — validados (sem link de fonte = rejeitado), sem sobrescrever, com ↩ para desfazer a leva.'],
+     ['Fila de revisão','roda <code>radar.py</code>: correlaciona os achados novos e grava <code>RELATORIO-RADAR.md</code> com a fila do que conferir.'],
      ['Sinalizar A-conferir','roda <code>radar.py --aplicar</code>: marca <code>status: A-conferir</code> nas notas afetadas — elas aparecem no painel de pendências do MOC até você despachar.']],
-  s:'<code>RELATORIO-RADAR.md</code> + notas afetadas sinalizadas (se você aplicar).'},
+  s:'Achados em <code>Radar/</code> + <code>RELATORIO-RADAR.md</code> + notas afetadas sinalizadas (se você aplicar).'},
 };
 function abrirInfo(id){
   const i = INFO[id]; if(!i) return;
@@ -3151,6 +3414,57 @@ async function reverterIA(){
   iaResultado.innerHTML = r.ok
     ? `<div class="fb-bloco"><b class="t" style="color:var(--ok)">↩ Revertido</b>` +
       r.restaurados.map(esc).join('<br>') + '</div>'
+    : '<span class="err">✗ ' + esc(r.msg) + '</span>';
+  estado();
+}
+
+/* ---------- radar por IA (Módulo E Nível 1 pelo painel) ---------- */
+let RAD_PROMPT = '';
+async function abrirRadarIA(){
+  radBg.classList.add('on');
+  radResultado.innerHTML = '';
+  radInfo.textContent = 'gerando o prompt…';
+  const d = await (await fetch('/api/radar_prompt')).json();
+  RAD_PROMPT = d.prompt || '';
+  radPrompt.value = RAD_PROMPT;
+  radInfo.textContent = (d.tem_fontes ? 'com o fontes.md' : 'SEM fontes.md no vault')
+    + (d.normas ? ' · ' + d.normas + ' norma(s) do acervo no prompt' : ' · rode 🔗 Conectar para enriquecer o prompt');
+}
+function fecharRadarIA(){ radBg.classList.remove('on'); }
+async function aplicarRadarIA(){
+  const resposta = radResposta.value.trim();
+  if(!resposta){ radResultado.innerHTML = '<span class="err">cole a resposta da IA antes de aplicar.</span>'; return; }
+  radResultado.textContent = 'validando e gravando…';
+  const r = await (await fetch('/api/radar_aplicar',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({resposta})})).json();
+  if(!r.ok){ radResultado.innerHTML = '<span class="err">✗ ' + esc(r.msg) + '</span>'; return; }
+  let html = '';
+  if(r.criados.length){
+    html += `<div class="fb-bloco"><b class="t" style="color:var(--ok)">✔ Gravados em Radar/ (${r.criados.length}) — ↩ desfaz a leva</b>`
+      + r.criados.map(c=>`<span>${c.alerta?'⚠️':'✓'} ${esc(c.arquivo)}</span>`).join('<br>')
+      + '</div><p class="sov-dica">Agora clique em <b>Fila de revisão</b> — o radar correlaciona os achados às notas do acervo.</p>';
+  }
+  if(r.rejeitados.length){
+    html += `<div class="fb-bloco"><b class="t" style="color:var(--err)">✗ Rejeitados (${r.rejeitados.length}) — nada gravado deles</b>`
+      + r.rejeitados.map(x=>`<span class="err">✗ ${esc(x.arquivo)} — ${esc(x.motivo)}</span>`).join('<br>') + '</div>';
+  }
+  if(r.avisos.length){
+    html += `<div class="fb-bloco" style="opacity:.85"><b class="t" style="color:var(--warn)">⚠ Ajustes na validação</b>`
+      + r.avisos.map(a=>`<span style="color:var(--warn)">• ${esc(a)}</span>`).join('<br>') + '</div>';
+  }
+  radResultado.innerHTML = html || 'nada gravado.';
+  estado();
+}
+async function reverterRadarIA(){
+  radResultado.textContent = 'desfazendo a última leva…';
+  const r = await (await fetch('/api/radar_reverter',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  radResultado.innerHTML = r.ok
+    ? `<div class="fb-bloco"><b class="t" style="color:var(--ok)">↩ Leva desfeita</b>`
+      + r.removidos.map(x=>`<span>🗑 ${esc(x)}</span>`).join('<br>')
+      + (r.mantidos.length ? '<br>' + r.mantidos.map(x=>`<span style="color:var(--warn)">• ${esc(x)}</span>`).join('<br>') : '')
+      + '</div>'
     : '<span class="err">✗ ' + esc(r.msg) + '</span>';
   estado();
 }
@@ -3451,7 +3765,7 @@ function atualizarTrilho(p, temRoot){
   else                      marcar('ec','ativa','ligue as obras entre si','pend');
   // 10 radar (manutenção contínua)
   if(!p.vault)              marcar('e10','bloq','publique o vault antes','');
-  else if(!p.radar)         marcar('e10','bloq','sem achados em Radar/ (Módulo E)','');
+  else if(!p.radar)         marcar('e10','ativa','sem achados — comece por 📡 Buscar novidades','pend');
   else if(p.radar_novos)    marcar('e10','ativa', p.radar_novos+' achado(s) novo(s)','pend');
   else                      marcar('e10','feito','radar em dia'+dt('radar'),'ok');
 }

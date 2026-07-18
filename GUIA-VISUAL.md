@@ -94,7 +94,7 @@ PUBLICAÇÃO
   (7) Publicar         [Simular] [Publicar]      → leva o resultado ao vault do Obsidian
   (8) Auditar vault    [Auditar vault]           → o "cérebro" está íntegro?
 MANUTENÇÃO
-  (9) Radar            [Fila de revisão] [Sinalizar A-conferir]
+  (9) Radar            [📡 Buscar novidades com IA] [Fila de revisão] [Sinalizar A-conferir]
 ```
 
 **O que cada etapa faz, em uma frase:**
@@ -107,7 +107,7 @@ MANUTENÇÃO
 6. **Qualidade** — o exame completo num clique: âncoras íntegras (presença, duplicadas, ordem, lacunas), YAML coerente com o tipo e a **nota** de cada arquivo (PRONTO/PARCIAL/REPROVADO). Ao terminar, o **relatório-triagem abre sozinho** — do grave ao irrelevante, cada item com a ação (e atalho ✎ para corrigir a ficha). Reabra pelo botão **📄 Relatório**. E para acelerar a revisão: **🤖 Preencher com IA** gera um prompt pronto (com as fichas pendentes e um trecho de cada documento) para você colar em **qualquer IA** — Gemini, ChatGPT, Claude…; cole a resposta de volta e o painel **valida e aplica** nas fichas, com backup automático e botão **↩ Reverter** (nada é gravado sem validação; vocabulário inventado pela IA é ignorado com aviso).
 7. **Publicar** — distribui o material pronto nas pastas certas do vault (doutrina por área, legislação, jurisprudência…). O card fala **uma coisa de cada vez, na ordem que importa**, sempre com o botão da ação ali mesmo: ⚠ *"refatie antes"* (você corrigiu fichas e o material publicável está com a versão antiga — botão **↻ Refatiar agora**); depois ✗ *"N reprovadas"* (botão **📋 Corrigir fichas**; as prontas podem ser publicadas desde já — reprovada fica retida, nada se estraga); por fim ✓ *"tudo em dia — simule e publique"*. **Clique "Simular" primeiro**: além do plano, a simulação termina com **"PRÓXIMOS PASSOS para publicar 100%"**. Notas que você editou à mão no Obsidian **não são sobrescritas**.
 8. **Auditar vault** — verifica as *ligações* do cérebro: fatia órfã, link quebrado, nota que "sumiu" dos painéis por erro de preenchimento.
-9. **Radar** — cruza as novidades (leis alteradas, novos julgados — coletadas pelo assistente de IA na pasta `Radar/`) com as notas do seu acervo que as citam, e monta a **fila de revisão**. "Sinalizar A-conferir" marca as notas afetadas para você revisar — **a decisão de reclassificar é sempre sua**.
+9. **Radar** — mantém o cérebro atualizado, em duas metades. **📡 Buscar novidades com IA** (v3.22): o painel gera um prompt de monitoramento — já com o seu `fontes.md`, as áreas e as **normas que o seu acervo cita** — para você colar em qualquer IA **com busca na web**; cole a resposta de volta e os achados são gravados em `Radar/` (validados: achado **sem link de fonte é rejeitado**; nada é sobrescrito; **↩ Reverter** desfaz a leva). Depois, **Fila de revisão** cruza os achados com as notas do acervo que citam os mesmos identificadores (Lei nº, Súmula, Tema — por regra, não por palpite) e "Sinalizar A-conferir" marca as afetadas — **a decisão de reclassificar é sempre sua**. Dica: rode **🔗 Conectar** antes; o prompt do radar fica muito mais certeiro com o catálogo pronto.
 
 ### 04 · Triagem — o raio-X dos seus PDFs
 

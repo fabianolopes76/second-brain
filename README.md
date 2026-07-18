@@ -1,6 +1,6 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
-**Versão 3.21.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+**Versão 3.22.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
 
 Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 
@@ -138,7 +138,7 @@ No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos d
 | 8 · Publicar | Distribui `3-MARKDOWN-LIMPO` no vault por regra (tipo→pasta do perfil). **Simule primeiro** | `publicar.py` |
 | 9 · Auditar vault | O **grafo** do vault está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs | `auditar_vault.py` |
 | 🔗 · Conectar | Costura o grafo: liga obras que citam as **mesmas normas** (ranking por raridade), hubs de norma em `Conexoes/`, `CATALOGO.md` para IAs | `conectar.py` |
-| 10 · Radar | Correlaciona os achados de `Radar/` (Cowork) às notas que os citam; sinaliza `A-conferir` | `radar.py` |
+| 10 · Radar | **📡 Buscar novidades com IA** (prompt de monitoramento → achados validados em `Radar/`) + correlação determinística às notas que os citam; sinaliza `A-conferir` | painel + `radar.py` |
 
 O trilho tem duas proteções: refazer uma etapa **já concluída** pede confirmação explícita (reprocessar pode sobrescrever), e cada etapa feita mostra o **carimbo de data** da última execução (derivado do disco).
 

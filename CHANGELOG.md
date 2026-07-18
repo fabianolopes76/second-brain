@@ -5,6 +5,37 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.22.0] — 2026-07-18 · Radar por IA — a etapa 9 destravada pelo painel
+
+A etapa 9 nunca "acendia": o radar é só a metade CORRELADORA de um ciclo
+cuja outra metade — a descoberta das novidades — dependia de rotinas
+externas (Módulo E) que nunca foram ligadas. Agora a descoberta também
+opera pelo painel, no padrão copiar-colar das fichas.
+
+### Adicionado
+- **📡 Buscar novidades com IA** (card 9 · Radar): o painel gera um
+  prompt de monitoramento — com o `fontes.md` do vault, as áreas do
+  acervo e as **normas que o acervo realmente cita** (do CATALOGO.md e
+  dos hubs do Conectar) — para colar em qualquer IA **com busca na
+  web**; a resposta em JSON volta pelo modal e vira achados em
+  `Radar/<tipo>/AAAA-MM-DD_titulo.md`, prontos para o `radar.py`
+  correlacionar. Rotas `GET /api/radar_prompt`,
+  `POST /api/radar_aplicar`, `POST /api/radar_reverter`.
+- **Validação que protege o ritual**: achado **sem URL de fonte é
+  rejeitado** (fonte oficial manda — sem link é boato); data fora de
+  AAAA-MM-DD e área fora do vocabulário viram aviso; título vira slug
+  seguro (imune a path traversal); arquivo existente **nunca é
+  sobrescrito**; alerta ⚠️ vira callout no achado.
+- **↩ Reverter última leva**: manifesto com hash por arquivo — desfaz
+  só o que o painel criou E ninguém editou depois; resposta inteira
+  inválida não destrói o undo anterior (pacto do fluxo de fichas).
+
+### Mudado
+- Card 9 sem achados deixou de ser "bloqueado": agora fica **ativo**
+  com a orientação "sem achados — comece por 📡 Buscar novidades".
+  Modal ⓘ explica as duas metades (descoberta por IA × correlação
+  determinística).
+
 ## [3.21.0] — 2026-07-18 · Conectar — o grafo do vault vira cérebro
 
 O graph view mostrava um arquipélago: 13.938 wikilinks, todos internos a
