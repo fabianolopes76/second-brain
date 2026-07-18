@@ -37,7 +37,8 @@ from pathlib import Path
 
 import frontmatter
 import taxonomia
-from comum import IGNORAR_PASTAS as IGNORAR, alvo_wikilink, vazio
+from comum import (IGNORAR_PASTAS as IGNORAR, RE_BLOCO_CONECTAR,
+                   alvo_wikilink, vazio)
 from auditar_acervo import auditar, nota as nota_auditoria
 
 
@@ -165,11 +166,26 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         # OneDrive sincronizando): um arquivo que falha não aborta os 2000
         # seguintes — re-rodar completa (o que copiou vira "inalterado").
         try:
+            texto_gravar = p["texto"]
             if alvo.exists():
-                if alvo.read_text(encoding="utf-8",
-                                  errors="replace") == p["texto"]:
+                texto_vault = alvo.read_text(encoding="utf-8",
+                                             errors="replace")
+                if texto_vault == p["texto"]:
                     resultado["inalterado"] += 1
                     continue
+                # O bloco `conectar:auto` (conectar.py) é regenerável, NÃO
+                # curadoria: vault que difere da origem só por ele conta
+                # como inalterado; e numa sobrescrita real (--force) o
+                # bloco existente é preservado no texto novo — republicar
+                # não desfaz as conexões.
+                m_con = RE_BLOCO_CONECTAR.search(texto_vault)
+                if m_con:
+                    if (RE_BLOCO_CONECTAR.sub("", texto_vault).rstrip("\n")
+                            == p["texto"].rstrip("\n")):
+                        resultado["inalterado"] += 1
+                        continue
+                    texto_gravar = (p["texto"].rstrip("\n") + "\n\n"
+                                    + m_con.group(0) + "\n")
                 if not force:
                     resultado["conflito"] += 1
                     detalhes["conflito"].append(
@@ -181,7 +197,7 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
                 cat_escrita = "publicado"
             if not dry:
                 alvo.parent.mkdir(parents=True, exist_ok=True)
-                alvo.write_text(p["texto"], encoding="utf-8")
+                alvo.write_text(texto_gravar, encoding="utf-8")
         except OSError as e:
             resultado["falha_disco"] += 1
             detalhes["falha_disco"].append(

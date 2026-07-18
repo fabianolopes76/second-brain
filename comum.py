@@ -40,3 +40,15 @@ def prefixo_fatia(stem: str) -> str:
     """Slug do nome-base das fatias/índice de uma obra — fonte única: o
     fatiar GERA com ele; quem procura fatias no disco usa O MESMO slug."""
     return re.sub(r"[^\w\-]+", "-", stem)[:60].strip("-")
+
+
+# Bloco "Relações (auto)" que o conectar.py grava nos índices do vault.
+# Mora aqui (e não no conectar) porque o publicar.py também precisa
+# reconhecê-lo: ao comparar origem×vault ele ignora/reinjeta o bloco —
+# regenerável por contrato, não é curadoria (mesmo pacto do moc:auto).
+CONECTAR_INI = ("<!-- conectar:auto:inicio — gerado por conectar.py; "
+                "edite FORA deste bloco -->")
+CONECTAR_FIM = "<!-- conectar:auto:fim -->"
+RE_BLOCO_CONECTAR = re.compile(
+    r"<!-- conectar:auto:inicio[^>]*-->.*?<!-- conectar:auto:fim -->",
+    re.DOTALL)

@@ -1,6 +1,6 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
-**Versão 3.20.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+**Versão 3.21.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
 
 Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 
@@ -70,6 +70,7 @@ second-brain/
 ├── validar_yaml_abnt.py     Valida o YAML por tipo_fonte + gera a referência ABNT
 ├── auditar_acervo.py        O arquivo gerado SERVE ao segundo cérebro? (nota por arquivo)
 ├── auditar_vault.py         O GRAFO do vault está íntegro? (ligações entre notas)
+├── conectar.py              Costura o grafo: relações obra↔obra, hubs de norma, catálogo p/ IAs
 ├── publicar.py              FASE 5 determinística: 3-MARKDOWN-LIMPO → vault, por regra
 ├── gerar_moc.py             Cria/regenera MOCs preservando a curadoria manual
 ├── radar.py                 FASE 6: correlaciona achados do radar às notas (por identificador)
@@ -136,6 +137,7 @@ No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos d
 | 7 · Auditar | O resultado serve ao segundo cérebro? (PRONTO/PARCIAL/REPROVADO) | `auditar_acervo.py` |
 | 8 · Publicar | Distribui `3-MARKDOWN-LIMPO` no vault por regra (tipo→pasta do perfil). **Simule primeiro** | `publicar.py` |
 | 9 · Auditar vault | O **grafo** do vault está íntegro? Fatias órfãs, links quebrados, notas invisíveis nos MOCs | `auditar_vault.py` |
+| 🔗 · Conectar | Costura o grafo: liga obras que citam as **mesmas normas** (ranking por raridade), hubs de norma em `Conexoes/`, `CATALOGO.md` para IAs | `conectar.py` |
 | 10 · Radar | Correlaciona os achados de `Radar/` (Cowork) às notas que os citam; sinaliza `A-conferir` | `radar.py` |
 
 O trilho tem duas proteções: refazer uma etapa **já concluída** pede confirmação explícita (reprocessar pode sobrescrever), e cada etapa feita mostra o **carimbo de data** da última execução (derivado do disco).
@@ -199,6 +201,8 @@ python3 gerar_moc.py vault/ --area Processual --nome MOC-Processo-Civil \
 
 # FASE 5+ · auditoria do GRAFO do vault (depois de publicar no Obsidian)
 python3 auditar_vault.py 4-OBSIDIAN-VAULT/ --detalhado
+python3 conectar.py 4-OBSIDIAN-VAULT/ --dry     # plano de conexões (relações + hubs + catálogo)
+python3 conectar.py 4-OBSIDIAN-VAULT/           # grava (blocos conectar:auto, regeneráveis)
 # Erros = nota fora do grafo ou INVISÍVEL nos painéis (fatia órfã, partes:
 # inconsistente, tipo/status fora do vocabulário, sem area, par tipo/tipo_fonte
 # incoerente, nome duplicado). Avisos = higiene (wikilink quebrado, área sem

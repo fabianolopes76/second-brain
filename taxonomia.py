@@ -198,6 +198,10 @@ class Perfil(NamedTuple):
     # Radar: como reconhecer, num texto, os identificadores que ligam um
     # achado de monitoramento às notas do vault (grupo 1 = o número).
     padroes_identificador: tuple = ()  # ((rotulo, regex), ...)
+    # Conectar: normas estruturantes do domínio — ganham nota-hub no vault
+    # mesmo citadas por poucas obras, com título amigável. A chave usa o
+    # MESMO (rotulo, numero) que identificadores() extrai (número só dígitos).
+    normas_notaveis: dict = {}         # (rotulo, numero) → título humano
 
 
 PERFIS = {
@@ -346,6 +350,23 @@ PERFIS = {
             ("sumula", r"\bs[úu]mula\s*(?:vinculante\s*)?(?:n[ºo°.]{0,2})?\s*(\d{1,4})"),
             ("processo", r"(\d{7}-?\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})"),
         ),
+        # Marcos do ordenamento: viram hub de conexão no vault mesmo com
+        # poucas citações (conectar.py). Números sem pontuação, como saem
+        # de identificadores().
+        normas_notaveis={
+            ("lei", "5172"): "CTN — Código Tributário Nacional (Lei 5.172/1966)",
+            ("lei", "10406"): "Código Civil (Lei 10.406/2002)",
+            ("lei", "13105"): "CPC/2015 (Lei 13.105/2015)",
+            ("lei", "6830"): "LEF — Execução Fiscal (Lei 6.830/1980)",
+            ("lei", "8078"): "CDC — Código de Defesa do Consumidor (Lei 8.078/1990)",
+            ("lei", "8429"): "Lei de Improbidade Administrativa (Lei 8.429/1992)",
+            ("lei", "9784"): "Lei do Processo Administrativo Federal (Lei 9.784/1999)",
+            ("lei", "12016"): "Lei do Mandado de Segurança (Lei 12.016/2009)",
+            ("lei", "4320"): "Normas Gerais de Direito Financeiro (Lei 4.320/1964)",
+            ("lei", "8666"): "Antiga Lei de Licitações (Lei 8.666/1993)",
+            ("lei", "14133"): "Nova Lei de Licitações (Lei 14.133/2021)",
+            ("decreto", "70235"): "Processo Administrativo Fiscal (Decreto 70.235/1972)",
+        },
     ),
 }
 
@@ -529,6 +550,16 @@ def _autoteste():
                    f"[{nome}] padrão '{rotulo}' deve ter exatamente 1 grupo")
             except re.error:
                 ok(False, f"[{nome}] regex inválida em '{rotulo}': {rx}")
+        # conectar: normas notáveis com rótulo do radar, número só-dígitos
+        # (como identificadores() normaliza) e título presente
+        rotulos_id = {r for r, _ in p.padroes_identificador}
+        for (rot, num), titulo in p.normas_notaveis.items():
+            ok(rot in rotulos_id,
+               f"[{nome}] norma notável com rótulo órfão: {rot}")
+            ok(str(num).isdigit(),
+               f"[{nome}] norma notável com número não-numérico: {num}")
+            ok(bool(str(titulo).strip()),
+               f"[{nome}] norma notável sem título: {rot} {num}")
         # códigos cobrem os vocabulários e são únicos
         areas_canonicas = set(p.areas.values())
         ok(set(p.codigo_area) == areas_canonicas,

@@ -5,6 +5,49 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.21.0] — 2026-07-18 · Conectar — o grafo do vault vira cérebro
+
+O graph view mostrava um arquipélago: 13.938 wikilinks, todos internos a
+cada obra (fatia ⇄ índice), nenhuma ponte entre obras. A análise no vault
+real provou que as pontes existem nos dados: obras que citam as mesmas
+normas e precedentes. Esta release as materializa, POR REGRA.
+
+### Adicionado
+- **`conectar.py`** (novo, etapa 🔗 do trilho): costura o grafo em três
+  camadas — (1) bloco **"🔗 Relações (auto)"** no índice de cada obra
+  (obras que compartilham identificadores, ranqueadas por **raridade
+  IDF**: norma citada por mais da metade das obras não pontua — o CTN
+  não liga tudo a tudo); (2) **hubs de norma** em
+  `00-Indices-MOCs/Conexoes/` (`Lei-5172.md`, `Sumula-435.md`) para
+  identificadores difundidos (df ≥ max(4, 10% das obras)) ou listados em
+  `normas_notaveis` do perfil — cada hub linka as obras citantes e as 3
+  fatias mais densas (do grafo à página exata); (3) **`CATALOGO.md`** —
+  o mapa que uma IA lê primeiro (obra → wikilink, ficha, normas
+  distintivas, resumo, com instrução de uso).
+- **Card 🔗 Conectar** no painel (após Auditar vault): Simular /
+  Conectar, modal ⓘ, estado pelo `RELATORIO-CONEXOES.md`; destino
+  compartilha o campo (e a memorização) do card Publicar.
+- **`normas_notaveis`** no perfil jurídico (taxonomia): CTN, CC, CPC,
+  LEF, CDC, LIA, MS, licitações etc. — marcos ganham hub mesmo com
+  poucas citações; validado no `--autoteste`.
+
+### Garantias (as de sempre)
+- Blocos só entre marcadores `conectar:auto` — **curadoria fora deles é
+  intocável**; inserção sempre ao FIM da nota; hub tem seção manual
+  preservada; nada é apagado (hub fora do corte vira item de relatório);
+  colisão de nome com nota sua → hub não criado, relatório avisa (e a
+  linha "Marcos citados" não aponta para a nota errada).
+- **Republicar não desfaz conexões**: o `publicar.py` reconhece o bloco
+  — vault que difere da origem só por ele conta como "inalterado" (sem
+  conflito falso), e sobrescrita real (`--force`) **preserva o bloco**
+  no texto novo.
+- Idempotente (re-rodar sem mudança = zero escrita), cache de varredura
+  (`.conectar_cache.json`, re-rodadas releem só o que mudou — essencial
+  no /mnt/... do WSL2), `falha_disco` por arquivo sem abortar o lote,
+  fatia **nunca** recebe bloco (a ligação é no nível da obra).
+- Obra sem nenhum identificador sai como **"isolada"** no relatório —
+  a fase futura de temas por IA conectará essas (papers, foresight).
+
 ## [3.20.0] — 2026-07-17 · Destino memorizado no uso + resiliência ao disco sob carga
 
 Nascida de um incidente real: com o Dropbox sincronizando a publicação,

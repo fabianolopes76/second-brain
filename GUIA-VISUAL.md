@@ -164,8 +164,9 @@ O vault de verdade pode estar em **outra pasta** e **já conter seu acervo antig
 3. Se faltar estrutura: **🧱 Preparar vault** — cria **só o que falta**. MOC seu, feito à mão, **nunca é tocado**: aparece com o botão **🔁 Migrar marcadores**, que (se você quiser) insere as marcas `moc:auto` **sem alterar o conteúdo** — a partir daí o painel pode atualizar os painéis automáticos preservando a sua curadoria.
 4. **Simular** → o plano + os avisos de ambiguidade de nome → **Publicar**. Regras de sempre: nada é sobrescrito, nada é apagado, reprovada fica retida, em conflito **o seu vault vence**.
 5. **Auditar vault (8)** no destino: mostra o grafo íntegro e lista o que do seu acervo antigo está invisível aos painéis — catalogar o legado é opcional e pode ser feito aos poucos (mesma lógica das fichas).
+6. **🔗 Conectar** (v3.21): abra o graph view do Obsidian antes e depois. Sem este passo, cada obra é uma ilha (índice ⇄ fatias); o Conectar cria as **pontes**: obras que citam as mesmas leis e súmulas ganham a seção *"🔗 Relações (auto)"* no índice, as normas mais citadas (CTN, LEF, CPC…) viram **notas-hub** em `00-Indices-MOCs/Conexoes/` e nasce o `CATALOGO.md` — o mapa que uma IA lê primeiro. **Simule** para ver o plano; tudo fica entre marcadores `conectar:auto` e é regenerável — o que você escrever fora deles nunca é tocado. Republicou uma obra? Rode Conectar de novo.
 
-> Seu conteúdo antigo convive em paz: ele só passa a **aparecer nos painéis dos MOCs** quando tiver `area`/`tipo` do vocabulário — até lá, continua acessível normalmente no Obsidian.
+> Seu conteúdo antigo convive em paz: ele só passa a **aparecer nos painéis dos MOCs** quando tiver `area`/`tipo` do vocabulário — até lá, continua acessível normalmente no Obsidian. E se uma obra aparecer como **"isolada"** no relatório do Conectar (nenhuma norma citada — ex.: papers, notas de método), é normal: a próxima evolução (temas por IA) é quem liga essas.
 
 ---
 

@@ -447,6 +447,7 @@ def progresso():
                          and not any(p in comum.IGNORAR_PASTAS for p in f.parts))
         r["publicado"] = (vault / "RELATORIO-PUBLICACAO.md").exists()
         r["vault_auditado"] = (vault / "RELATORIO-VAULT.md").exists()
+        r["conectado"] = (vault / "RELATORIO-CONEXOES.md").exists()
         radar_dir = vault / "00-Indices-MOCs" / "Radar"
         if radar_dir.is_dir():
             achados = [f for f in radar_dir.rglob("*.md")
@@ -480,6 +481,8 @@ def progresso():
             r["datas"]["publicado"] = _mt(vault / "RELATORIO-PUBLICACAO.md")
         if r["vault_auditado"]:
             r["datas"]["vault_auditado"] = _mt(vault / "RELATORIO-VAULT.md")
+        if r.get("conectado"):
+            r["datas"]["conectado"] = _mt(vault / "RELATORIO-CONEXOES.md")
         if (vault / "RELATORIO-RADAR.md").exists():
             r["datas"]["radar"] = _mt(vault / "RELATORIO-RADAR.md")
     return r
@@ -875,6 +878,21 @@ def acao_auditar_vault(pasta=""):
         return False, "auditar_vault.py não encontrado na pasta de scripts."
     cmd = f'python3 {shlex.quote(str(av))} {shlex.quote(str(alvo))} --detalhado'
     return JOB.start(f"Auditar vault {alvo.name}", cmd)
+
+
+def acao_conectar(pasta="", dry=True):
+    """FASE 5b: costura o grafo — liga obras que citam as mesmas normas
+    (conectar.py: relações nos índices, hubs de norma, catálogo p/ IAs)."""
+    alvo = vault_destino(pasta)
+    if not alvo.is_dir():
+        return False, f"Pasta do vault não encontrada: {alvo}."
+    cn = Path(CFG["scripts"]) / "conectar.py"
+    if not cn.exists():
+        return False, "conectar.py não encontrado na pasta de scripts."
+    cmd = (f'python3 {shlex.quote(str(cn))} {shlex.quote(str(alvo))}'
+           + (" --dry" if dry else ""))
+    nome = "Conectar (simulação)" if dry else "Conectar o grafo"
+    return JOB.start(nome, cmd)
 
 
 # ---------------------------------------------------------------------------
@@ -1857,6 +1875,9 @@ class Handler(BaseHTTPRequestHandler):
             elif a == "auditar_vault":
                 ok, msg = acao_auditar_vault(
                     _lembrar_vault(data.get("pasta", "")))
+            elif a == "conectar":
+                ok, msg = acao_conectar(_lembrar_vault(data.get("pasta", "")),
+                                        dry=bool(data.get("dry", True)))
             elif a == "radar":
                 ok, msg = acao_radar(_lembrar_vault(data.get("pasta", "")),
                                      aplicar=bool(data.get("aplicar", False)))
@@ -2414,6 +2435,24 @@ tr:hover td{background:var(--surf2)}
         </div>
       </div>
     </div>
+
+    <div class="et" id="ec">
+      <div class="bar"><div class="dot">🔗</div><div class="linha"></div></div>
+      <div class="conteudo">
+        <div class="topo">
+          <h3>Conectar</h3><button class="iet" onclick="abrirInfo('ec')" title="O que faz esta etapa?">i</button>
+          <span class="desc">Costura o <b>grafo</b>: liga obras que citam as mesmas normas, cria os hubs e o catálogo para IAs.</span>
+          <span class="st" id="sc">—</span>
+          <div class="acoes">
+            <button data-a onclick="acao('conectar',{pasta:vaultp.value,dry:true})">Simular</button>
+            <button data-a class="primary" onclick="acao('conectar',{pasta:vaultp.value,dry:false})">Conectar</button>
+          </div>
+        </div>
+        <div class="extra">
+          <div class="dica">Tudo entre os marcadores <b>conectar:auto</b> é regenerável — sua curadoria fora deles nunca é tocada. Republicou uma obra? Rode Conectar de novo. Relatório: <b>RELATORIO-CONEXOES.md</b> no vault.</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="fase">Manutenção — o radar mantém o cérebro vivo</div>
@@ -2851,6 +2890,11 @@ const INFO = {
   o:'O que nenhuma checagem arquivo-a-arquivo enxerga: fatia órfã, <code>partes:</code> que não bate com as fatias reais, wikilink quebrado, vocabulário fora do perfil (a nota <b>some dos painéis</b> Dataview sem erro), área sem MOC, nome duplicado.',
   a:[['Auditar vault','roda <code>auditar_vault.py --detalhado</code> no vault e grava <code>RELATORIO-VAULT.md</code> — cada achado vem com a causa e a correção.']],
   s:'<code>RELATORIO-VAULT.md</code> dentro do vault (abra no próprio Obsidian).'},
+ ec:{t:'🔗 · Conectar — o arquipélago vira cérebro',
+  o:'Sem este passo, cada obra é uma <b>ilha</b> no graph view (índice ⇄ fatias, nada entre obras). O <code>conectar.py</code> cria as pontes <b>por regra</b>: obras que citam as <b>mesmas normas e precedentes</b> (Lei, Súmula, EC, Tema — os identificadores do radar) ganham um bloco "🔗 Relações (auto)" no índice, ranqueado por <b>raridade</b> (o CTN, citado por quase todos, não liga tudo a tudo — normas onipresentes viram <b>hubs</b>). Nasce também o <code>CATALOGO.md</code>: o mapa que uma IA lê primeiro para navegar o acervo com precisão de página.',
+  a:[['Simular','roda <code>conectar.py --dry</code>: mostra relações, hubs e catálogo planejados, sem gravar nada.'],
+     ['Conectar','grava os blocos nos índices (entre marcadores <code>conectar:auto</code> — o resto da nota é seu), cria/atualiza os hubs em <code>Conexoes/</code> e o catálogo. Re-rodar é seguro: só muda o que mudou; <b>nada é apagado</b>.']],
+  s:'Blocos de relações nos índices, hubs de norma em <code>00-Indices-MOCs/Conexoes/</code>, <code>CATALOGO.md</code> e <b>RELATORIO-CONEXOES.md</b>. Obra sem nenhum identificador aparece como "isolada" — a fase futura de <b>temas por IA</b> conecta essas.'},
  e10:{t:'9 · Radar — o cérebro continua vivo',
   o:'As novidades (leis alteradas, julgados novos) coletadas pelo assistente na pasta <code>Radar/</code> são cruzadas com as notas do acervo que as citam — por <b>identificador forte</b> (Lei nº, Tema, Súmula, nº CNJ), não por palpite. O radar <b>sinaliza</b>; a decisão de reclassificar é sempre sua.',
   a:[['Fila de revisão','roda <code>radar.py</code>: correlaciona os achados novos e grava <code>RELATORIO-RADAR.md</code> com a fila do que conferir.'],
@@ -3249,7 +3293,8 @@ function editarDaAuditoria(arq){
    sobrescrever — só com confirmação consciente. (Simular/dry não pede.) */
 const ETAPA_DA_ACAO = {triagem:'e1', ocr:'e2', paginar:'e3', limpar:'e4',
                        fatiar:'e5', qualidade:'e6', validar:'e6', auditar:'e6',
-                       publicar:'e8', auditar_vault:'e9', radar:'e10'};
+                       publicar:'e8', auditar_vault:'e9', conectar:'ec',
+                       radar:'e10'};
 async function acao(a,extra){
   const et = document.getElementById(ETAPA_DA_ACAO[a]||'');
   const ehDry = extra && extra.dry === true;
@@ -3400,6 +3445,10 @@ function atualizarTrilho(p, temRoot){
   if(!p.vault)              marcar('e9','bloq','publique o vault antes','');
   else if(p.vault_auditado) marcar('e9','feito','grafo auditado'+dt('vault_auditado'),'ok');
   else                      marcar('e9','ativa', p.vault+' notas no vault','pend');
+  // 🔗 conectar (grafo temático)
+  if(!p.vault)              marcar('ec','bloq','publique o vault antes','');
+  else if(p.conectado)      marcar('ec','feito','grafo conectado'+dt('conectado'),'ok');
+  else                      marcar('ec','ativa','ligue as obras entre si','pend');
   // 10 radar (manutenção contínua)
   if(!p.vault)              marcar('e10','bloq','publique o vault antes','');
   else if(!p.radar)         marcar('e10','bloq','sem achados em Radar/ (Módulo E)','');
