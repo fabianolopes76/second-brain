@@ -28,6 +28,8 @@
 #   MODE=substituir bash aplicar_ocr.sh     # nao pergunta; substitui o original
 #   DRYRUN=1 bash aplicar_ocr.sh            # so lista, nao grava  <-- COMECE POR AQUI
 #   ROOT="/mnt/c/..." bash aplicar_ocr.sh   # define a pasta raiz
+#   FILES_FROM=lista bash aplicar_ocr.sh    # so os PDFs da lista (NUL-separada),
+#                                           # em vez de varrer $ROOT
 #   OCR_STRATEGY=force-ocr bash aplicar_ocr.sh   # forca rasterizar (maior)
 #   OUTPUT_TYPE=pdf bash aplicar_ocr.sh     # PDF comum (menor) em vez de PDF/A
 #
@@ -44,6 +46,13 @@ set -u
 # === CONFIGURACAO ============================================================
 ROOT="${ROOT:-/mnt/c/Users/FabianoLopes/OneDrive/Documents/drive}"
 SUFFIX="${SUFFIX:-_OCR}"
+
+# LISTA PRONTA DE ARQUIVOS (opcional). Aponta para um arquivo com os caminhos
+# dos PDFs separados por NUL. Definida, substitui a varredura de $ROOT — e o
+# acervo passa a poder morar em pastas distintas (é assim que o painel manda
+# a selecao de fontes). Vazia, o comportamento e o de sempre: find em $ROOT.
+# $ROOT segue valendo como pasta de TRABALHO (é onde o controle.csv nasce).
+FILES_FROM="${FILES_FROM:-}"
 
 # Planilha de triagem (FASE 1 do WORKFLOW). O script ja analisa cada PDF pagina
 # a pagina; aproveitamos essa analise para emitir o controle.csv, que alimenta a
@@ -327,7 +336,12 @@ if [[ "$MODE" == substituir ]]; then
 fi
 
 echo "============================================================"
-echo "Pasta raiz : $ROOT"
+if [[ -n "$FILES_FROM" ]]; then
+    echo "Trabalho   : $ROOT"
+    echo "Fontes     : lista selecionada no painel (pastas e/ou arquivos)"
+else
+    echo "Pasta raiz : $ROOT"
+fi
 if [[ "$MODE" == substituir ]]; then
     echo "Modo       : SUBSTITUIR o original"
 else
@@ -386,13 +400,29 @@ analisar_pdf() {
 # promoveu a copia a arquivo principal) e FONTE normal — sem isso, apagar
 # os originais fazia esses PDFs sumirem da triagem e nada mais convertia.
 files=()
-while IFS= read -r -d '' f; do
-    case "$(basename "$f")" in
-        *"${SUFFIX}".pdf) [[ -f "${f%"${SUFFIX}".pdf}.pdf" ]] && continue ;;
-        *"${SUFFIX}".PDF) [[ -f "${f%"${SUFFIX}".PDF}.PDF" ]] && continue ;;
-    esac
-    files+=("$f")
-done < <(find "$ROOT" -type f -iname '*.pdf' -print0)
+if [[ -n "$FILES_FROM" ]]; then
+    # Lista pronta (painel): a selecao ja veio expandida e sem as copias _OCR
+    # redundantes — aqui so se confere que o arquivo ainda existe no disco.
+    if [[ ! -f "$FILES_FROM" ]]; then
+        echo "ERRO: lista de fontes nao encontrada: $FILES_FROM" >&2
+        exit 1
+    fi
+    while IFS= read -r -d '' f; do
+        if [[ -f "$f" ]]; then
+            files+=("$f")
+        else
+            echo "AVISO: fonte sumiu do disco, ignorada: $f" >&2
+        fi
+    done < "$FILES_FROM"
+else
+    while IFS= read -r -d '' f; do
+        case "$(basename "$f")" in
+            *"${SUFFIX}".pdf) [[ -f "${f%"${SUFFIX}".pdf}.pdf" ]] && continue ;;
+            *"${SUFFIX}".PDF) [[ -f "${f%"${SUFFIX}".PDF}.PDF" ]] && continue ;;
+        esac
+        files+=("$f")
+    done < <(find "$ROOT" -type f -iname '*.pdf' -print0)
+fi
 
 N=${#files[@]}
 echo "Encontrados $N PDF(s)."

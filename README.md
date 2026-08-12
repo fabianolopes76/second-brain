@@ -1,6 +1,6 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
-**Versão 3.22.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+**Versão 3.23.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
 
 Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 
@@ -124,7 +124,7 @@ python3 acervo_app.py
 # abra no navegador: http://localhost:8765
 ```
 
-No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos do Windows e do WSL2), e siga o trilho:
+No painel: defina a **pasta de trabalho** (botão 📁 Procurar navega os discos do Windows e do WSL2) — é onde nascem o `controle.csv` e as pastas de saída —, escolha as **fontes** (opcional) e siga o trilho:
 
 | Etapa | O que faz | Script por trás |
 |---|---|---|
@@ -143,6 +143,20 @@ No painel: defina a **pasta do acervo** (botão 📁 Procurar navega os discos d
 O trilho tem duas proteções: refazer uma etapa **já concluída** pede confirmação explícita (reprocessar pode sobrescrever), e cada etapa feita mostra o **carimbo de data** da última execução (derivado do disco).
 
 Guia completo do app (incluindo processamento de arquivos avulsos, offset de página e navegador de pastas): **[LEIA-ME_APP.md](LEIA-ME_APP.md)**.
+
+### As fontes — o acervo não precisa caber numa pasta
+
+O bloco **Fontes**, no card 01, define *o que* processar; a pasta de trabalho define *onde ficam as saídas*. São coisas diferentes, e por isso os PDFs podem estar espalhados:
+
+- **📁 pastas inteiras** e **📄 arquivos avulsos** na mesma lista, de discos e diretórios diferentes — no navegador (modo misto), a caixinha seleciona a pasta inteira e o nome continua entrando nela para procurar mais fundo;
+- cada pasta tem seu **↳ subpastas** (ligado por padrão): dá para pegar uma árvore inteira e, ao lado, só o nível de outra;
+- **nada é movido ou copiado** — os `_OCR.pdf` nascem ao lado de cada original, e só os markdowns vão para a pasta de trabalho;
+- a lista **fica salva** (`~/.config/acervo/config.json`): sobrevive ao F5 e ao reinício do painel;
+- **lista vazia = a pasta de trabalho inteira**, exatamente como o painel sempre funcionou.
+
+Dois PDFs de fontes diferentes com o **mesmo nome** virariam o mesmo markdown: o card 01 avisa em vermelho e a conversão pula o segundo, dizendo de onde veio o primeiro. Renomeie na origem para aproveitar os dois.
+
+Na linha de comando, a mesma seleção se faz com `FILES_FROM` (lista de caminhos separada por NUL); sem ela, o `aplicar_ocr.sh` varre `$ROOT` como sempre.
 
 ### A triagem e o `controle.csv`
 

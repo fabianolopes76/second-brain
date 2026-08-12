@@ -39,13 +39,45 @@ O painel tem 4 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 
 ### 01 · Configuração — diga onde estão os PDFs
 
-1. Clique em **📁 Procurar…** ao lado de "Pasta do acervo".
+São **duas coisas diferentes**, e desde a v3.23 elas ficam separadas:
+
+- a **pasta de trabalho** — *onde ficam as saídas* (`controle.csv`, `2-MARKDOWN-BRUTO`, `3-MARKDOWN-LIMPO`);
+- as **fontes** — *o que processar*: pastas inteiras e arquivos avulsos, que podem estar espalhados por qualquer lugar.
+
+**A pasta de trabalho:**
+
+1. Clique em **📁 Procurar…** ao lado de "Pasta de trabalho".
 2. Navegue pelo seletor: ele mostra os discos do Windows (`💾 Windows C:`), suas pastas (Documents, Downloads…) e as do Linux. **Cada pasta mostra quantos PDFs tem** — isso ajuda a achar o acervo.
 3. Selecione a pasta e clique **Definir**.
 
 > **Clicou em "Definir" sem escolher a pasta?** Aparece uma advertência em vermelho logo abaixo do campo — ela some sozinha assim que você escolhe (ou digita) a pasta.
 >
-> **A configuração fica lembrada** (v3.13+): ao reabrir o painel, a pasta do acervo e o idioma voltam sozinhos — retome de onde parou sem redefinir nada.
+> **A configuração fica lembrada** (v3.13+): ao reabrir o painel, a pasta de trabalho, as fontes e o idioma voltam sozinhos — retome de onde parou sem redefinir nada.
+
+**As fontes** (v3.23) — logo abaixo, o bloco *"Fontes — o que processar"*:
+
+1. Clique em **➕ Adicionar pastas/arquivos…**.
+2. No seletor, agora **as pastas também têm caixinha**: marque a caixinha para levar a **pasta inteira**; clique no **nome** para entrar nela e continuar procurando. Arquivos soltos têm caixinha como sempre.
+3. Navegue para outra pasta, até outro disco, e marque mais — **a seleção não se perde**. No fim, clique em **Adicionar selecionados**.
+
+```
+Fontes — o que processar · 3 item(ns) · 47 PDFs
+┌──────────────────────────────────────────────────────┐
+│ 📁 /mnt/c/.../Livros/Penal      ☑ subpastas  32 PDFs ×│
+│ 📁 /mnt/d/Baixados/STJ 2024     ☐ subpastas  14 PDFs ×│
+│ 📄 /mnt/c/.../Teoria do Delito.pdf            1 PDF  ×│
+└──────────────────────────────────────────────────────┘
+ [➕ Adicionar pastas/arquivos…]  [Limpar tudo]
+```
+
+- **↳ subpastas** — cada pasta tem o seu (ligado por padrão). Desligue para levar só os PDFs soltos naquele nível.
+- **×** tira o item da lista; **Limpar tudo** volta ao comportamento clássico (processar a pasta de trabalho inteira).
+- **Nada é movido nem copiado**: os `_OCR.pdf` nascem ao lado de cada original, na pasta de origem. Só os markdowns vão para a pasta de trabalho.
+- O contador do topo (**"— PDFs"**) mostra o total das fontes: é exatamente o que a Triagem vai analisar.
+
+> **⚠ Aviso de nome repetido.** Se duas fontes tiverem PDFs de mesmo nome (dois `Manual.pdf`), eles virariam o **mesmo** markdown. O painel avisa em vermelho, com os dois caminhos, e na conversão o segundo é **pulado** — nada é sobrescrito. Renomeie um deles na origem para aproveitar os dois.
+
+> **Deixar a lista vazia é uma escolha legítima**: o painel volta a fazer o que sempre fez, varrendo a pasta de trabalho inteira (subpastas incluídas).
 
 Os outros campos (Scripts, venv, Idioma) já vêm preenchidos — só mexa se o suporte orientar. O idioma padrão é **auto**: cada obra é detectada e OCRizada na língua certa (pt/en/de/fr/it/es).
 
@@ -144,8 +176,8 @@ A **referência ABNT** ninguém digita à mão: com a ficha completa e o campo v
 
 Um lote novo de PDFs, do download ao Obsidian:
 
-1. Copie os PDFs para a pasta do acervo (no Windows Explorer mesmo).
-2. Duplo-clique em **Iniciar-Acervo.bat**.
+1. Duplo-clique em **Iniciar-Acervo.bat** e, no card 01, aponte as **fontes** para onde os PDFs já estão (**➕ Adicionar pastas/arquivos…**). *Não precisa mais juntar tudo numa pasta antes — mas, se preferir, copiar os PDFs para a pasta de trabalho e deixar a lista de fontes vazia funciona igual.*
+2. Confira o contador **"— PDFs"** no topo: é o que vai ser processado.
 3. **(1) Analisar** → confira a tabela da seção 04.
 4. **(2) Aplicar OCR** → espere o log terminar.
 5. **(3) Converter** → **(4) Limpar** → **(5) Fatiar**.
@@ -197,14 +229,16 @@ O vault de verdade pode estar em **outra pasta** e **já conter seu acervo antig
 | `FALHOU (rc=3: dependência ausente…)` | Atualize para a **v3.6.1+** (`git pull`): em versões antigas, **vírgula no nome do PDF** derrubava a detecção de idioma e o OCR falhava fingindo dependência ausente. Se persistir após atualizar, falta mesmo uma ferramenta — abra **⚙ Ambiente** e envie o comando ao suporte. |
 | Nota não aparece no MOC do Obsidian | Etapa **(8) Auditar vault** → abra `RELATORIO-VAULT.md` no próprio vault: ele lista a causa e a correção. |
 | O painel pergunta "já concluída — continuar?" | Você clicou numa etapa verde. Se foi de propósito (reprocessar), confirme; senão, cancele. |
-| "Converter pasta" respondia "nenhum arquivo exige âncora" | Versão antiga (≤3.7): só convertia livros. Atualize para a **v3.8.0+** — converte todos os PDFs pesquisáveis e lista no log os pulados por falta de OCR. |
+| "Converter tudo" respondia "nenhum arquivo exige âncora" | Versão antiga (≤3.7): só convertia livros. Atualize para a **v3.8.0+** — converte todos os PDFs pesquisáveis e lista no log os pulados por falta de OCR. |
 | Corrigir idioma diz "não deu para detectar" | Atualize para a **v3.8.0+** (detecta pela cópia `_OCR` e pelo texto do próprio markdown). Se ainda assim não der, o caso é manual: peça ao suporte para rodar `corrigir_idioma.py arquivo.md --forcar por`. |
 | Publicar: `tipo '(vazio)' sem pasta de publicação` | A nota não tem o campo `tipo` — sem ele não há rota nem painel no MOC. Rode **Normalizar** (etapa 5): ele deriva o `tipo` do tipo_fonte quando não há ambiguidade. O que sobrar (índice REPROVADO, ficha vazia) é o **refino da Fase 3c** — preencha a ficha do índice no Projeto Claude e publique de novo. |
 | Publicar: `N fatia(s) retidas com o índice` | Proposital: fatia sem índice nasceria órfã no vault. Resolva o índice da obra (a razão está na mesma linha) e as fatias entram junto na próxima publicação. |
 | Apaguei o `controle.csv` e as pastas geradas para reprocessar do zero, e a conversão não roda | Rode **(1) Analisar** de novo (o trilho recomeça do disco). Se você também apagou os PDFs **originais** e deixou só as cópias `_OCR.pdf`, atualize para a **v3.11.1+**: antes a triagem ignorava a cópia órfã e ela sumia do pipeline. |
-| Parei no meio do trabalho — como retomo sem perder nada? | Feche o painel sem medo: na **v3.13+** a pasta do acervo fica **lembrada** (não precisa redefinir ao reabrir) e o trilho relê o disco para saber onde você está. **"Converter pasta" pula quem já foi convertido** — suas fichas corrigidas ficam intactas (reconverter é opt-in, via checkbox). Refatiar também limpa fatias antigas que sobrariam. |
+| Parei no meio do trabalho — como retomo sem perder nada? | Feche o painel sem medo: na **v3.13+** a pasta de trabalho fica **lembrada** (não precisa redefinir ao reabrir; na **v3.23+**, a lista de fontes também) e o trilho relê o disco para saber onde você está. **"Converter tudo" pula quem já foi convertido** — suas fichas corrigidas ficam intactas (reconverter é opt-in, via checkbox). Refatiar também limpa fatias antigas que sobrariam. |
 | Ao salvar a ficha aparece "arquivo gigante — FATIE" | A partir da **v3.13** isso vem no quadro **"Outras etapas"**, separado da ficha: não se resolve no formulário. Se você **já fatiou** (etapa 5), aparece como ✓ resolvido — o arquivo-mestre fica inteiro por design. |
 | Erro vermelho comprido no terminal com `Cannot allocate memory` | O Dropbox/OneDrive sincronizando uma publicação grande sobrecarrega o disco do Windows visto pelo WSL2, e uma leitura falha por um instante. Na **v3.20+** o painel absorve isso sozinho (mostra o último retrato e segue); o Publicar também não aborta mais o lote — o que falhar sai como `falha_disco` no relatório e **rodar Publicar de novo completa** (o que já copiou vira "inalterado"). |
+| Meus PDFs estão espalhados em várias pastas | Desde a **v3.23** não precisa juntá-los: no card 01, **➕ Adicionar pastas/arquivos…** monta uma lista com pastas inteiras e arquivos avulsos, de discos diferentes. A caixinha da pasta a seleciona inteira; o nome dela continua servindo para entrar e procurar mais fundo. |
+| Dois livros diferentes com o mesmo nome de arquivo | O painel avisa em vermelho no card 01 e a conversão **pula o segundo** (dizendo de onde veio o primeiro) — os dois virariam o mesmo markdown. Renomeie um deles na pasta de origem e rode a Triagem de novo. |
 | Publiquei para o meu vault, mas o conteúdo foi parar no `4-OBSIDIAN-VAULT` | Antes da **v3.20**, o caminho digitado no card valia só até fechar o painel — reaberto, a publicação voltava em silêncio para a pasta de trabalho. Atualize: o destino agora fica **memorizado no primeiro uso** e o campo mostra "(padrão: seu-vault)". Publicar de novo com o destino certo resolve — nada se perde nem duplica. |
 
 ---

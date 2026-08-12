@@ -43,6 +43,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -124,7 +125,11 @@ class Job:
 
 JOB = Job()
 CFG = {"root": "", "scripts": "", "venv": str(Path.home() / "venvs/acervo"),
-       "vault": "", "lang": "auto", "lang_fallback": "por+eng"}
+       "vault": "", "lang": "auto", "lang_fallback": "por+eng",
+       # O QUE processar — pastas inteiras e/ou arquivos avulsos, de lugares
+       # distintos: [{"path": "...", "tipo": "dir"|"file", "rec": True}, ...].
+       # Vazio = a pasta de trabalho inteira (comportamento histórico).
+       "fontes": []}
 
 
 def vault_destino(pasta: str = "") -> Path:
@@ -160,6 +165,32 @@ def _config_path() -> Path:
     return Path.home() / ".config" / "acervo" / "config.json"
 
 
+def normalizar_fontes(lista) -> list:
+    """Saneia a lista de fontes venha ela do config.json ou do navegador.
+
+    Item malformado é descartado em silêncio (mesma postura defensiva do
+    resto do carregador) e caminho repetido entra uma vez só — a ordem da
+    lista é a ordem em que o usuário adicionou, e é a de processamento."""
+    saida, vistos = [], set()
+    for item in (lista if isinstance(lista, list) else []):
+        if isinstance(item, str):
+            item = {"path": item}
+        if not isinstance(item, dict):
+            continue
+        p = win_para_wsl(str(item.get("path") or ""))
+        if len(p) > 1:
+            p = p.rstrip("/")      # "/mnt/c/Livros/" e "/mnt/c/Livros" são o mesmo
+        if not p or p in vistos:
+            continue
+        vistos.add(p)
+        tipo = item.get("tipo")
+        if tipo not in ("dir", "file"):
+            tipo = "file" if Path(p).is_file() else "dir"
+        saida.append({"path": p, "tipo": tipo,
+                      "rec": bool(item.get("rec", True))})
+    return saida
+
+
 def carregar_config() -> dict:
     """Lê o config salvo; nunca levanta, filtra chaves/tipos conhecidos."""
     try:
@@ -171,6 +202,8 @@ def carregar_config() -> dict:
     # a trava do /api/config não pode ser burlada por um config editado à mão
     if str(cfg.get("venv", "")).startswith("/mnt/"):
         cfg.pop("venv")
+    if "fontes" in dados:
+        cfg["fontes"] = normalizar_fontes(dados["fontes"])
     return cfg
 
 
@@ -298,7 +331,7 @@ def diagnostico():
 
     # pasta raiz
     r = CFG["root"]
-    itens.append({"nome": "pasta do acervo", "ok": bool(r) and Path(r).is_dir(),
+    itens.append({"nome": "pasta de trabalho", "ok": bool(r) and Path(r).is_dir(),
                   "dica": "" if r and Path(r).is_dir() else "defina a pasta acima"})
     return itens
 
@@ -346,13 +379,21 @@ def atalhos():
     if CFG.get("scripts"):
         lista.append({"nome": "Scripts", "path": CFG["scripts"], "tipo": "wsl"})
     if CFG.get("root"):
-        lista.append({"nome": "Acervo atual", "path": CFG["root"], "tipo": "wsl"})
+        lista.append({"nome": "Pasta de trabalho", "path": CFG["root"], "tipo": "wsl"})
+    # As fontes já escolhidas viram atalho: voltar a uma delas para acrescentar
+    # mais um livro é o gesto mais repetido depois da primeira seleção.
+    for f in normalizar_fontes(CFG.get("fontes")):
+        alvo = f["path"] if f["tipo"] == "dir" else str(Path(f["path"]).parent)
+        if alvo != CFG.get("root") and not any(x["path"] == alvo for x in lista):
+            lista.append({"nome": "Fonte · " + Path(alvo).name, "path": alvo,
+                          "tipo": "wsl"})
     return lista
 
 
 def listar_pasta(caminho: str, modo: str = "dir"):
-    """Lista subpastas (e arquivos, se modo='file') de um diretório.
-    modo: 'dir' = só pastas | 'file' = pastas + PDFs."""
+    """Lista subpastas (e arquivos, quando o modo pede) de um diretório.
+    modo: 'dir' = só pastas | 'file' = pastas + PDFs (a pasta só navega) |
+    'misto' = o mesmo, mas a pasta TAMBÉM pode ser selecionada inteira."""
     p = Path(caminho) if caminho else Path.home()
     if not p.is_dir():
         p = p.parent if p.parent.is_dir() else Path.home()
@@ -371,7 +412,8 @@ def listar_pasta(caminho: str, modo: str = "dir"):
                     except (PermissionError, OSError):
                         pass
                     pastas.append({"nome": item.name, "path": str(item), "pdfs": n_pdf})
-                elif modo == "file" and item.suffix.lower() in (".pdf", ".epub", ".mobi"):
+                elif (modo in ("file", "misto")
+                      and item.suffix.lower() in (".pdf", ".epub", ".mobi")):
                     arquivos.append({"nome": item.name, "path": str(item),
                                      "tam": item.stat().st_size})
             except (PermissionError, OSError):
@@ -400,15 +442,18 @@ def listar_pasta(caminho: str, modo: str = "dir"):
     }
 
 
-def progresso():
-    """Em que ponto do workflow o acervo está? Guia a UI e libera os passos."""
+def progresso(n_pdfs=None):
+    """Em que ponto do workflow o acervo está? Guia a UI e libera os passos.
+
+    n_pdfs: contagem já apurada pelo chamador — evita varrer as fontes duas
+    vezes no mesmo poll (o /api/estado bate a cada 1,5 s sobre o 9p do WSL)."""
     r = {"pdfs": 0, "csv": 0, "ocr_pend": 0, "bruto": 0, "limpo": 0,
          "fatias": 0, "auditado": False, "vault": 0, "vault_auditado": False,
          "radar": 0, "radar_novos": 0}
     if not CFG["root"] or not Path(CFG["root"]).is_dir():
         return r
     base = Path(CFG["root"])
-    r["pdfs"] = contar_pdfs()
+    r["pdfs"] = contar_pdfs() if n_pdfs is None else n_pdfs
 
     linhas = ler_csv()
     r["csv"] = len(linhas)
@@ -495,27 +540,114 @@ def progresso():
 PASTAS_PRODUTO = {"2-MARKDOWN-BRUTO", "3-MARKDOWN-LIMPO", "4-OBSIDIAN-VAULT"}
 
 
+def _pdfs_do_nivel(pasta: str, arqs) -> list:
+    """Os PDFs-fonte de UM nível de diretório, já em ordem estável."""
+    nomes = set(arqs)
+    saida = []
+    for a in sorted(arqs, key=str.lower):
+        base, ext = os.path.splitext(a)
+        if ext.lower() != ".pdf":
+            continue
+        # copia _OCR só é "saída" se o original ainda existe ao lado;
+        # órfã (original apagado) conta como fonte, igual à triagem
+        if base.endswith("_OCR") and (base[:-4] + ext) in nomes:
+            continue
+        saida.append(os.path.join(pasta, a))
+    return saida
+
+
+def _pdfs_de(origem: str, rec: bool = True) -> list:
+    """Os PDFs de um item da seleção: arquivo avulso, ou pasta (com ou sem
+    subpastas). Arquivo escolhido À MÃO entra como está — inclusive um _OCR,
+    porque a escolha explícita do usuário vale mais que a heurística."""
+    p = Path(origem)
+    try:
+        if p.is_file():
+            return [str(p)] if p.suffix.lower() == ".pdf" else []
+        if not p.is_dir():
+            return []
+    except OSError:
+        return []
+
+    saida = []
+    if rec:
+        # os.walk com onerror: sob carga (Dropbox/OneDrive sincronizando), o
+        # /mnt/... pode falhar com ENOMEM/EIO transitório — pasta ilegível é
+        # pulada em vez de derrubar o poll inteiro.
+        for pasta, dirs, arqs in os.walk(str(p), onerror=lambda e: None):
+            dirs[:] = sorted((d for d in dirs
+                              if d not in PASTAS_PRODUTO and not d.startswith(".")),
+                             key=str.lower)
+            saida += _pdfs_do_nivel(pasta, arqs)
+    else:
+        try:
+            saida += _pdfs_do_nivel(str(p), [a for a in os.listdir(str(p))
+                                             if os.path.isfile(os.path.join(str(p), a))])
+        except OSError:
+            pass
+    return saida
+
+
+def fontes_itens() -> list:
+    """A seleção efetiva. SEM seleção, a pasta de trabalho inteira — que é,
+    literalmente, o comportamento de sempre."""
+    fontes = normalizar_fontes(CFG.get("fontes"))
+    if fontes:
+        return fontes
+    if CFG["root"] and Path(CFG["root"]).is_dir():
+        return [{"path": CFG["root"], "tipo": "dir", "rec": True}]
+    return []
+
+
+def fontes_resumo() -> dict:
+    """Retrato completo da seleção: o que cada fonte traz, o total (sem
+    repetição) e as colisões de nome. Uma varredura só, servindo a UI, o
+    badge do cabeçalho e o que de fato vai rodar — assim eles nunca divergem.
+    """
+    itens, arquivos, vistos = [], [], set()
+    for f in fontes_itens():
+        pdfs = _pdfs_de(f["path"], f.get("rec", True))
+        for p in pdfs:
+            if p not in vistos:      # fontes podem se sobrepor
+                vistos.add(p)
+                arquivos.append(p)
+        itens.append({**f, "n": len(pdfs),
+                      "existe": os.path.exists(f["path"])})
+
+    # Dois PDFs de fontes distintas com o mesmo nome viram o MESMO .md no
+    # 2-MARKDOWN-BRUTO — um apagaria o outro em silêncio. Aqui só se avisa;
+    # quem pula é a conversão (acao_paginar/acao_lote).
+    por_destino = {}
+    for p in arquivos:
+        stem = Path(p).stem
+        if stem.endswith("_OCR"):
+            stem = stem[:-4]
+        por_destino.setdefault(stem, []).append(p)
+
+    colisoes = sorted(({"nome": k + ".md", "arquivos": v}
+                       for k, v in por_destino.items() if len(v) > 1),
+                      key=lambda c: c["nome"])
+
+    return {
+        "itens": itens,
+        "arquivos": arquivos,
+        "total": len(arquivos),
+        # a soma dos chips não bate com o total quando uma fonte está dentro
+        # de outra — a UI diz isso em vez de deixar o usuário conferindo conta
+        "repetidos": sum(i["n"] for i in itens) - len(arquivos),
+        "selecionado": bool(normalizar_fontes(CFG.get("fontes"))),
+        "colisoes": colisoes[:20],   # a UI mostra uma amostra; o log traz tudo
+        "colisoes_n": len(colisoes),
+    }
+
+
+def fontes_expandidas() -> list:
+    """A lista plana de PDFs a processar, na ordem em que foi selecionada."""
+    return fontes_resumo()["arquivos"]
+
+
 def contar_pdfs():
-    if not CFG["root"] or not Path(CFG["root"]).is_dir():
-        return 0
-    n = 0
-    # os.walk com onerror: sob carga (Dropbox/OneDrive sincronizando), o
-    # /mnt/... pode falhar com ENOMEM/EIO transitório — pasta ilegível é
-    # pulada em vez de derrubar o poll inteiro.
-    for pasta, dirs, arqs in os.walk(CFG["root"], onerror=lambda e: None):
-        dirs[:] = [d for d in dirs
-                   if d not in PASTAS_PRODUTO and not d.startswith(".")]
-        nomes = set(arqs)
-        for a in arqs:
-            base, ext = os.path.splitext(a)
-            if ext.lower() != ".pdf":
-                continue
-            # copia _OCR só é "saída" se o original ainda existe ao lado;
-            # órfã (original apagado) conta como fonte, igual à triagem
-            if base.endswith("_OCR") and (base[:-4] + ext) in nomes:
-                continue
-            n += 1
-    return n
+    return fontes_resumo()["total"]
 
 
 _ESTADO_BOM = None   # último retrato do disco servido com sucesso
@@ -530,11 +662,20 @@ def _estado_json():
     o último retrato completo; o job vem SEMPRE fresco (vive em memória)."""
     global _ESTADO_BOM
     try:
+        # uma varredura só das fontes, reaproveitada pelo badge e pelo trilho.
+        # A lista de caminhos NÃO vai para o navegador: são milhares de linhas
+        # a cada 1,5 s, e a UI só precisa das contagens.
+        fontes = fontes_resumo()
+        magro = {k: v for k, v in fontes.items() if k != "arquivos"}
         disco = {"diag": diagnostico(), "csv": ler_csv(),
-                 "n_pdfs": contar_pdfs(), "prog": progresso()}
+                 "n_pdfs": fontes["total"], "fontes": magro,
+                 "prog": progresso(fontes["total"])}
         _ESTADO_BOM = disco
     except OSError:
         disco = _ESTADO_BOM or {"diag": [], "csv": [], "n_pdfs": 0,
+                                "fontes": {"itens": [], "total": 0,
+                                           "colisoes": [], "repetidos": 0,
+                                           "selecionado": False},
                                 "prog": {"datas": {}, "fichas": {}, "pub": {}}}
     return {"cfg": CFG, "job": JOB.snapshot(), **disco}
 
@@ -542,6 +683,17 @@ def _estado_json():
 # ---------------------------------------------------------------------------
 # Ações do pipeline
 # ---------------------------------------------------------------------------
+def _gravar_lista_fontes(arquivos) -> str:
+    """A seleção expandida, num arquivo NUL-separado para o aplicar_ocr.sh.
+
+    Vive no tempdir do Linux — nunca dentro do acervo, que é sincronizado
+    pelo Dropbox. Caminho fixo e reescrito a cada execução: sem faxina
+    pendente, e inspecionável quando algo dá errado."""
+    lista = Path(tempfile.gettempdir()) / "acervo-fontes.lst"
+    lista.write_bytes(b"".join(str(a).encode() + b"\0" for a in arquivos))
+    return str(lista)
+
+
 def acao_triagem(dry=True, force=False, modo="manter"):
     sh = Path(CFG["scripts"]) / "aplicar_ocr.sh"
     env = {
@@ -556,7 +708,15 @@ def acao_triagem(dry=True, force=False, modo="manter"):
         "OCR_LANG_FALLBACK": CFG.get("lang_fallback", "por+eng"),
         "DETECTOR": str(Path(CFG["scripts"]) / "detectar_idioma.py"),
     }
+    # SÓ com seleção explícita a lista pronta entra em cena. Sem ela, o script
+    # varre $ROOT como sempre fez — o acervo em uso não sente a mudança.
+    fontes = fontes_resumo()
+    if fontes["selecionado"]:
+        env["FILES_FROM"] = _gravar_lista_fontes(fontes["arquivos"])
+
     nome = "Triagem (dry-run)" if dry else f"OCR em lote (modo={modo})"
+    if fontes["selecionado"]:
+        nome += f" · {fontes['total']} PDF(s) de {len(fontes['itens'])} fonte(s)"
     return JOB.start(nome, ["bash", str(sh)], cwd=CFG["root"], env=env)
 
 
@@ -571,6 +731,10 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
     RETOMADA SEM PERDA: markdown de destino que JÁ EXISTE é pulado por padrão
     — reconverter sobrescreveria a ficha corrigida à mão no 2-MARKDOWN-BRUTO.
     `reconverter=True` (checkbox no card) refaz conscientemente.
+
+    NOME REPETIDO: com fontes em pastas distintas, dois PDFs podem ter o mesmo
+    nome e disputar o mesmo .md. O segundo é PULADO com o caminho do primeiro
+    no log — apagar em silêncio o trabalho já feito seria o pior desfecho.
     """
     linhas = ler_csv()
     if not linhas:
@@ -581,7 +745,8 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
     saida = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
     saida.mkdir(exist_ok=True)
 
-    cmds, nomes, sem_ocr, ja_convertidos = [], [], [], []
+    cmds, nomes, sem_ocr, ja_convertidos, colididos = [], [], [], [], []
+    donos = {}          # markdown de destino -> PDF que o reivindicou primeiro
     for l in linhas:
         # prefere o _OCR quando existe; senão, o original
         src = l.get("arquivo_ocr") or l.get("caminho")
@@ -596,9 +761,14 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
             sem_ocr.append(Path(src).name)
             continue
         dst = saida / (Path(src).stem.replace("_OCR", "") + ".md")
+        if dst in donos:
+            colididos.append((src, donos[dst]))
+            continue
         if dst.exists() and not reconverter:
             ja_convertidos.append(dst.name)
+            donos[dst] = src
             continue
+        donos[dst] = src
         c = [str(vpy), str(script), src, "-o", str(dst)]
         if offset:
             c += ["--offset", str(offset)]
@@ -630,9 +800,12 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
                for n in ja_convertidos]
     partes += [f'echo {shlex.quote("    PULADO (precisa de OCR — etapa 2): " + n)}'
                for n in sem_ocr]
+    partes += ["echo " + shlex.quote(
+                   f"    PULADO (nome repetido — o markdown já vem de {dono}): {src}")
+               for src, dono in colididos]
     partes += ['echo ' + shlex.quote(f">> [{i+1}/{len(cmds)}] {nomes[i]}") + f' ; {c}'
                for i, c in enumerate(cmds)]
-    return JOB.start(f"Converter pasta ({len(cmds)} arquivo(s))", " ; ".join(partes))
+    return JOB.start(f"Converter tudo ({len(cmds)} arquivo(s))", " ; ".join(partes))
 
 
 def _detectar_idioma_de(src: Path) -> str:
@@ -680,14 +853,24 @@ def acao_lote(arquivos, offset=0, romanas=0, tipo="", idioma=""):
     saida.mkdir(parents=True, exist_ok=True)
 
     partes, n_ok = [], 0
+    donos = {}          # markdown de destino -> arquivo que o reivindicou antes
     for i, caminho in enumerate(arquivos, 1):
         src = Path(caminho)
         if not src.exists():
             partes.append(f'echo ">> [{i}/{len(arquivos)}] {shlex.quote(src.name)}: '
                           f'ARQUIVO NAO ENCONTRADO"')
             continue
-        n_ok += 1
         dst = saida / (src.stem.replace("_OCR", "") + ".md")
+        if dst in donos:
+            # dois arquivos de pastas diferentes com o mesmo nome: o segundo
+            # apagaria o primeiro. Pula e mostra de quem é o markdown.
+            partes.append(
+                f'echo "" ; echo ' + shlex.quote(
+                    f">> [{i}/{len(arquivos)}] {src.name}: PULADO (nome repetido "
+                    f"— o markdown já vem de {donos[dst]})"))
+            continue
+        donos[dst] = str(src)
+        n_ok += 1
         cab = f'echo "" ; echo ">> [{i}/{len(arquivos)}] {src.name}"'
         if dst.exists():
             # seleção explícita sobrescreve, mas avisa (ficha anterior se vai)
@@ -811,7 +994,7 @@ def acao_auditar(pasta=""):
         # cai para a raiz do acervo, se ali houver .md
         alvo = Path(CFG["root"])
     if not alvo.is_dir():
-        return False, "Defina a pasta do acervo."
+        return False, "Defina a pasta de trabalho."
     aud = Path(CFG["scripts"]) / "auditar_acervo.py"
     if not aud.exists():
         return False, "auditar_acervo.py não encontrado na pasta de scripts."
@@ -1976,6 +2159,19 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     avisos.append(f"Pasta do acervo não encontrada: {r}")
 
+            # "fontes" in data (e não data.get): a lista VAZIA é uma escolha
+            # legítima — é como se limpa a seleção e se volta a varrer a pasta.
+            if "fontes" in data:
+                novas, sumiram = [], []
+                for f in normalizar_fontes(data["fontes"]):
+                    alvo = Path(f["path"])
+                    ok = alvo.is_file() if f["tipo"] == "file" else alvo.is_dir()
+                    (novas if ok else sumiram).append(f)
+                CFG["fontes"] = novas
+                if sumiram:
+                    avisos.append("Fonte(s) não encontrada(s), fora da lista: "
+                                  + ", ".join(f["path"] for f in sumiram))
+
             if data.get("scripts"):
                 CFG["scripts"] = win_para_wsl(data["scripts"])
 
@@ -2076,7 +2272,14 @@ class Handler(BaseHTTPRequestHandler):
             a = data.get("acao")
             if a != "arquivo" and (not CFG["root"] or not Path(CFG["root"]).is_dir()):
                 return self._send(200, json.dumps(
-                    {"ok": False, "msg": "Defina uma pasta válida do acervo."}))
+                    {"ok": False, "msg": "Defina uma pasta de trabalho válida."}))
+            if a in ("triagem", "ocr") and not fontes_expandidas():
+                fs = normalizar_fontes(CFG.get("fontes"))
+                return self._send(200, json.dumps({"ok": False, "msg": (
+                    "Nenhum PDF nas fontes selecionadas — confira a lista no "
+                    "card 01." if fs else
+                    "Nenhum PDF na pasta de trabalho. Adicione fontes no "
+                    "card 01 ou aponte a pasta onde estão os PDFs.")}))
             if a == "triagem":
                 ok, msg = acao_triagem(dry=True)
             elif a == "ocr":
@@ -2274,6 +2477,25 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .fi .rm{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 3px;font-size:14px}
 .fi .rm:hover{color:var(--err)}
 
+/* ---- fontes (o QUE processar: pastas inteiras e/ou arquivos avulsos) ---- */
+.fontes{max-height:190px;overflow:auto;border:1px solid var(--line);border-radius:8px;
+  background:var(--surf2);margin-bottom:8px}
+.fontes:empty{display:none}
+.fo{display:flex;align-items:center;gap:8px;padding:6px 9px;font-size:12px;
+  border-bottom:1px solid var(--line)}
+.fo:last-child{border-bottom:none}
+.fo .cam{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  direction:rtl;text-align:left;font:11.5px var(--mono)}
+.fo .ct{color:var(--muted);font-size:11px;white-space:nowrap}
+.fo .sub{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px;
+  white-space:nowrap;cursor:pointer;user-select:none}
+.fo .sub input{width:13px;height:13px;margin:0}
+.fo .rm{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 3px;font-size:14px}
+.fo .rm:hover{color:var(--err)}
+.fo.sumiu{color:var(--err)}
+.fo.sumiu .ct{color:var(--err)}
+.fvazio{padding:8px 9px;font-size:11.5px;color:var(--muted)}
+
 /* ---- diagnóstico ---- */
 .diag{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 /* botão Ambiente (status) · alerta · slideover */
@@ -2439,10 +2661,10 @@ tr:hover td{background:var(--surf2)}
   <div class="card">
     <div class="row">
       <div class="campo">
-        <label>Pasta do acervo — onde estão os PDFs</label>
+        <label title="é aqui que nascem o controle.csv e as pastas 2-MARKDOWN-BRUTO / 3-MARKDOWN-LIMPO">Pasta de trabalho — onde ficam o controle.csv e as saídas</label>
         <input type="text" id="root" placeholder="clique em Procurar…"
                oninput="if(this.value.trim()) rootAviso.hidden = true">
-        <div class="alerta" id="rootAviso" hidden>⚠ Defina primeiro a pasta do acervo — clique em 📁 Procurar…</div>
+        <div class="alerta" id="rootAviso" hidden>⚠ Defina primeiro a pasta de trabalho — clique em 📁 Procurar…</div>
       </div>
       <button class="bnav" style="height:38px" onclick="abrirNav('root','dir')">📁 Procurar…</button>
       <button class="primary" style="height:38px" onclick="salvar()">Definir</button>
@@ -2450,6 +2672,17 @@ tr:hover td{background:var(--surf2)}
               title="dependências do sistema — verde: tudo pronto; vermelho: precisa de ação">⚙ Ambiente</button>
     </div>
     <div class="eco" id="rootWsl"></div>
+
+    <div class="campo" style="margin-top:14px">
+      <label title="pastas inteiras e arquivos avulsos, de lugares diferentes — misturados">Fontes — o que processar <span id="fontesTot" style="color:var(--muted);font-weight:400"></span></label>
+      <div class="fontes" id="fontes"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="bnav" onclick="abrirNav('fontes','misto')">➕ Adicionar pastas/arquivos…</button>
+        <button class="bnav" id="btnFontesLimpar" onclick="limparFontes()">Limpar tudo</button>
+      </div>
+      <div class="alerta" id="fontesColisao" hidden></div>
+      <div class="dica">Os PDFs podem estar espalhados: escolha <b>pastas inteiras</b> e <b>arquivos avulsos</b> de lugares diferentes. Nada é movido — as saídas vão todas para a pasta de trabalho. <b>Lista vazia</b> = processa a pasta de trabalho inteira.</div>
+    </div>
 
     <div class="grid3">
       <div class="campo">
@@ -2536,10 +2769,10 @@ tr:hover td{background:var(--surf2)}
       <div class="conteudo">
         <div class="topo">
           <h3>Paginação</h3><button class="iet" onclick="abrirInfo('e3')" title="O que faz esta etapa?">i</button>
-          <span class="desc">PDF → Markdown com âncoras <code>{{p.NN}}</code>. Converte todos os PDFs pesquisáveis; escaneado sem OCR fica listado como pulado.</span>
+          <span class="desc">PDF → Markdown com âncoras <code>{{p.NN}}</code>. Converte todos os PDFs pesquisáveis do <code>controle.csv</code> — ou seja, as fontes da última triagem; escaneado sem OCR fica listado como pulado.</span>
           <span class="st" id="s3">—</span>
           <div class="acoes">
-            <button data-a class="primary" onclick="acao('paginar',{offset:+offset.value,romanas:+romanas.value,reconverter:reconv.checked})">Converter pasta</button>
+            <button data-a class="primary" onclick="acao('paginar',{offset:+offset.value,romanas:+romanas.value,reconverter:reconv.checked})">Converter tudo</button>
           </div>
         </div>
         <div class="extra">
@@ -2877,7 +3110,10 @@ tr:hover td{background:var(--surf2)}
 
 <script>
 let ultimoLog = "";
-let navAlvo = "root", navModo = "dir", navAtual = "", navSel = new Set(), FILA = [];
+/* navSel é um Map path->'dir'|'file': no modo 'misto' a mesma seleção mistura
+   pastas inteiras e arquivos avulsos. FONTES espelha o que o servidor guarda. */
+let navAlvo = "root", navModo = "dir", navAtual = "", navSel = new Map();
+let FILA = [], FONTES = [], CFG_ROOT = "";
 
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 const q = s => JSON.stringify(s).replace(/"/g,'&quot;');
@@ -2944,10 +3180,15 @@ let MODST = null;
 /* ---------- navegador ---------- */
 async function abrirNav(alvo, modo){
   navAlvo = alvo; navModo = modo || 'dir';
-  navSel = new Set(navAlvo === 'fila' ? FILA.map(f=>f.path) : []);
-  navTit.textContent = modo === 'file' ? 'Selecionar arquivos (1 ou mais)' : 'Selecionar pasta';
-  navOk.textContent  = modo === 'file' ? 'Adicionar selecionados' : 'Selecionar esta pasta';
-  navSelBar.style.display = modo === 'file' ? 'flex' : 'none';
+  navSel = new Map();
+  if(navAlvo === 'fila')   FILA.forEach(f=>navSel.set(f.path,'file'));
+  if(navAlvo === 'fontes') FONTES.forEach(f=>navSel.set(f.path,f.tipo));
+  const multi = (navModo === 'file' || navModo === 'misto');
+  navTit.textContent = navModo === 'misto' ? 'Selecionar pastas e arquivos (1 ou mais)'
+                     : navModo === 'file'  ? 'Selecionar arquivos (1 ou mais)'
+                                           : 'Selecionar pasta';
+  navOk.textContent  = multi ? 'Adicionar selecionados' : 'Selecionar esta pasta';
+  navSelBar.style.display = multi ? 'flex' : 'none';
   if(MODST) Object.assign(mod.style, {left:MODST.l, top:MODST.t, width:MODST.w, height:MODST.h});
   ov.classList.add('on');
 
@@ -2959,7 +3200,9 @@ async function abrirNav(alvo, modo){
     '<div class="t">WSL2</div>' +
     at.filter(a=>a.tipo==='wsl').map(a=>
       `<a title="${esc(a.path)}" onclick="navIr(${q(a.path)})">🐧 ${esc(a.nome)}</a>`).join('');
-  const inicial = (document.getElementById(alvo)||{}).value ||
+  // Alvos que são <div> (fila, fontes) não têm .value: sem este fallback o
+  // navegador sempre abria no primeiro disco do Windows, longe do acervo.
+  const inicial = (document.getElementById(alvo)||{}).value || CFG_ROOT ||
                   (at.find(a=>a.tipo==='windows')||{}).path || '';
   navIr(inicial);
 }
@@ -2974,15 +3217,23 @@ async function navIr(caminho){
     `<a onclick="navIr(${q(b.path)})">${esc(b.nome)}</a>` + (i<a.length-1?'<span>/</span>':'')).join('');
   let html = '';
   if(d.erro) html += `<div style="padding:14px;color:var(--err);font-size:13px">${esc(d.erro)}</div>`;
-  html += (d.pastas||[]).map(f=>
-    `<div class="it" title="${esc(f.path)}" onclick="navIr(${q(f.path)})">
-       <span class="ic">📁</span><span class="nm">${esc(f.nome)}</span>
-       ${f.pdfs?`<span class="ct">${f.pdfs} PDF</span>`:''}</div>`).join('');
+  html += (d.pastas||[]).map(f=>{
+    // No modo misto a pasta tem as duas naturezas: a caixinha a SELECIONA
+    // inteira, o nome continua entrando nela para procurar mais fundo.
+    const on = navSel.has(f.path);
+    const cb = navModo === 'misto'
+      ? `<input type="checkbox" ${on?'checked':''} title="selecionar esta pasta inteira"
+                onclick="event.stopPropagation();navToggle(${q(f.path)},'dir')">` : '';
+    return `<div class="it${on?' sel':''}" data-d="${esc(f.path)}" title="${esc(f.path)}"
+                 onclick="navIr(${q(f.path)})">
+       ${cb}<span class="ic">📁</span><span class="nm">${esc(f.nome)}</span>
+       ${f.pdfs?`<span class="ct">${f.pdfs} PDF</span>`:''}</div>`;
+  }).join('');
   html += (d.arquivos||[]).map(f=>{
     const on = navSel.has(f.path);
     return `<div class="it${on?' sel':''}" data-f="${esc(f.path)}" title="${esc(f.path)}"
-                 onclick="navToggle(${q(f.path)})">
-       <input type="checkbox" ${on?'checked':''} onclick="event.stopPropagation();navToggle(${q(f.path)})">
+                 onclick="navToggle(${q(f.path)},'file')">
+       <input type="checkbox" ${on?'checked':''} onclick="event.stopPropagation();navToggle(${q(f.path)},'file')">
        <span class="ic">📄</span><span class="nm">${esc(f.nome)}</span>
        <span class="ct">${(f.tam/1048576).toFixed(1)} MB</span></div>`;
   }).join('');
@@ -2990,30 +3241,48 @@ async function navIr(caminho){
   navContar();
 }
 function navSubir(){ const p = navAtual.split('/').filter(Boolean); p.pop(); navIr('/'+p.join('/')); }
-function navToggle(caminho){
-  if(navModo !== 'file') return;
-  navSel.has(caminho) ? navSel.delete(caminho) : navSel.add(caminho);
-  const el = navLista.querySelector(`.it[data-f="${CSS.escape(caminho)}"]`);
+function navToggle(caminho, tipo){
+  if(navModo !== 'file' && navModo !== 'misto') return;
+  if(tipo === 'dir' && navModo !== 'misto') return;
+  navSel.has(caminho) ? navSel.delete(caminho) : navSel.set(caminho, tipo || 'file');
+  const el = navLista.querySelector(
+    `.it[data-${tipo==='dir'?'d':'f'}="${CSS.escape(caminho)}"]`);
   if(el){ el.classList.toggle('sel', navSel.has(caminho));
           const cb = el.querySelector('input'); if(cb) cb.checked = navSel.has(caminho); }
   navContar();
 }
 function navMarcarTodos(m){
-  navLista.querySelectorAll('.it[data-f]').forEach(el=>{
-    const p = el.getAttribute('data-f');
-    m ? navSel.add(p) : navSel.delete(p);
+  // no modo misto, "todos" abrange as pastas E os arquivos deste nível
+  const alvos = navModo === 'misto' ? '.it[data-f],.it[data-d]' : '.it[data-f]';
+  navLista.querySelectorAll(alvos).forEach(el=>{
+    const dir = el.hasAttribute('data-d');
+    const p = el.getAttribute(dir ? 'data-d' : 'data-f');
+    m ? navSel.set(p, dir ? 'dir' : 'file') : navSel.delete(p);
     el.classList.toggle('sel', m);
     const cb = el.querySelector('input'); if(cb) cb.checked = m;
   });
   navContar();
 }
 function navContar(){
-  if(navModo !== 'file') return;
-  navSelN.textContent = navSel.size + (navSel.size===1?' selecionado':' selecionados');
+  if(navModo !== 'file' && navModo !== 'misto') return;
+  const n = navSel.size;
+  const pastas = [...navSel.values()].filter(t=>t==='dir').length;
+  navSelN.textContent = n + (n===1?' selecionado':' selecionados')
+    + (pastas ? ` (${pastas} pasta${pastas>1?'s':''})` : '');
 }
 function navSelecionar(){
-  if(navModo === 'file'){
-    navSel.forEach(p=>{ if(!FILA.some(f=>f.path===p)) FILA.push({path:p, nome:p.split('/').pop()}); });
+  if(navModo === 'misto'){
+    // acumula entre visitas a pastas diferentes — é assim que a seleção
+    // atravessa discos e diretórios sem perder o que já foi marcado
+    navSel.forEach((tipo, p)=>{
+      if(!FONTES.some(f=>f.path===p)) FONTES.push({path:p, tipo:tipo, rec:true});
+    });
+    renderFontes();
+    salvarFontes();
+  } else if(navModo === 'file'){
+    navSel.forEach((tipo, p)=>{
+      if(!FILA.some(f=>f.path===p)) FILA.push({path:p, nome:p.split('/').pop()});
+    });
     renderFila();
   } else {
     document.getElementById(navAlvo).value = navAtual;
@@ -3023,6 +3292,75 @@ function navSelecionar(){
     }
   }
   fecharNav();
+}
+
+/* ---------- fontes (o QUE processar) ----------
+   A lista vive no SERVIDOR (config.json): sobrevive a recarregar a página e a
+   reiniciar o painel. As contagens vêm do /api/estado — quem varre o disco é
+   sempre o mesmo código que vai rodar, então chip e badge nunca divergem. */
+let FONTES_EST = {}, FONTES_ASSIN = "", FONTES_SALVANDO = 0;
+
+function renderFontes(){
+  const el = document.getElementById('fontes');
+  const info_de = {};
+  (FONTES_EST.itens||[]).forEach(i=>{ info_de[i.path] = i; });
+
+  // colisão de nomes: dois PDFs que virariam o MESMO markdown
+  const col = FONTES_EST.colisoes || [];
+  fontesColisao.hidden = !col.length;
+  if(col.length){
+    const n = FONTES_EST.colisoes_n || col.length;
+    fontesColisao.innerHTML = `⚠ ${n} nome(s) repetido(s) entre as fontes — `
+      + `na conversão o segundo é <b>pulado</b> (nada é sobrescrito). `
+      + `Renomeie o PDF na origem para aproveitar os dois:<br>`
+      + col.slice(0,5).map(c=>
+          `<span style="font:11px var(--mono);font-weight:400">• ${esc(c.nome)}: `
+          + c.arquivos.map(a=>esc(a)).join('  ×  ') + '</span>').join('<br>')
+      + (n > 5 ? `<br><span style="font-weight:400">…e mais ${n-5}</span>` : '');
+  }
+
+  if(!FONTES.length){
+    el.innerHTML = '<div class="fvazio">Nenhuma fonte escolhida — vai processar a '
+                 + 'pasta de trabalho inteira.</div>';
+    fontesTot.textContent = '';
+    btnFontesLimpar.disabled = true;
+    return;
+  }
+  btnFontesLimpar.disabled = false;
+  const tot = FONTES_EST.total || 0, rep = FONTES_EST.repetidos || 0;
+  fontesTot.textContent = `· ${FONTES.length} item(ns) · ${tot} PDF${tot===1?'':'s'}`
+                        + (rep ? ` (${rep} repetido(s), contado uma vez)` : '');
+
+  el.innerHTML = FONTES.map((f,i)=>{
+    const info = info_de[f.path] || {};
+    const sumiu = info.existe === false;
+    const conta = sumiu ? 'não encontrada'
+                : (info.n === undefined ? '…'
+                   : info.n + (info.n===1 ? ' PDF' : ' PDFs'));
+    const sub = f.tipo === 'dir'
+      ? `<label class="sub" title="incluir os PDFs das subpastas">
+           <input type="checkbox" ${f.rec?'checked':''} onchange="recFonte(${i},this.checked)"> subpastas
+         </label>` : '';
+    return `<div class="fo${sumiu?' sumiu':''}">
+       <span class="ic">${f.tipo==='dir'?'📁':'📄'}</span>
+       <span class="cam" title="${esc(f.path)}">${esc(f.path)}</span>
+       ${sub}<span class="ct">${esc(conta)}</span>
+       <button class="rm" title="tirar da lista" onclick="tirarFonte(${i})">×</button></div>`;
+  }).join('');
+}
+function tirarFonte(i){ FONTES.splice(i,1); renderFontes(); salvarFontes(); }
+function recFonte(i, v){ FONTES[i].rec = v; renderFontes(); salvarFontes(); }
+function limparFontes(){
+  if(!FONTES.length) return;
+  if(!confirm('Tirar todas as fontes? O painel volta a processar a pasta de '
+              + 'trabalho inteira.')) return;
+  FONTES = []; renderFontes(); salvarFontes();
+}
+async function salvarFontes(){
+  // enquanto o POST não volta, o poll NÃO sobrescreve a lista local —
+  // senão um clique na caixinha "subpastas" piscava de volta ao estado antigo
+  FONTES_SALVANDO++;
+  try { await salvar({fontes: FONTES}); } finally { FONTES_SALVANDO--; }
 }
 
 /* ---------- fila ---------- */
@@ -3109,15 +3447,15 @@ radBg.addEventListener('click', e => { if(e.target === radBg) fecharRadarIA(); }
 const INFO = {
  e1:{t:'1 · Triagem — o raio-X, sem alterar nada',
   o:'Roda o <code>aplicar_ocr.sh</code> em <b>modo simulação</b>: examina cada PDF página a página (tem camada de texto? é digitalizado?), detecta o idioma e infere o tipo provável pelo nome e pelo conteúdo. Nenhum arquivo é alterado.',
-  a:[['Analisar','executa <code>aplicar_ocr.sh</code> (dry-run) na pasta do acervo e grava a planilha <code>controle.csv</code>, que preenche a tabela da seção 04 e guia as etapas seguintes.']],
-  s:'<code>controle.csv</code> na pasta do acervo. Revise a tabela da seção 04 — ela é o seu checkpoint.'},
+  a:[['Analisar','executa <code>aplicar_ocr.sh</code> (dry-run) sobre as <b>fontes</b> escolhidas no card 01 — pastas inteiras e arquivos avulsos, de lugares diferentes — e grava a planilha <code>controle.csv</code>, que preenche a tabela da seção 04 e guia as etapas seguintes. Sem fontes escolhidas, varre a pasta de trabalho inteira.']],
+  s:'<code>controle.csv</code> na pasta de trabalho, com uma linha por PDF e o caminho de origem de cada um. Revise a tabela da seção 04 — ela é o seu checkpoint.'},
  e2:{t:'2 · OCR — torna os digitalizados pesquisáveis',
   o:'Aplica reconhecimento de texto (<code>ocrmypdf</code>) <b>só nos PDFs que precisam</b>, no idioma detectado na triagem. O original é preservado: nasce uma cópia <code>nome_OCR.pdf</code>. PDFs que já têm texto são pulados. Durante o processamento, este card mostra o arquivo atual e a barra de progresso; o log completo corre na seção 02.',
   a:[['Aplicar OCR','executa <code>aplicar_ocr.sh</code> (sem dry-run, modo manter). Livro digitalizado grande pode levar mais de uma hora — acompanhe pelo sinal de vida.']],
   s:'Cópias <code>_OCR.pdf</code> ao lado dos originais e a coluna <i>ocr_status</i> do <code>controle.csv</code> atualizada.'},
  e3:{t:'3 · Paginação — o markdown nasce aqui, com âncoras',
   o:'Converte PDF pesquisável em Markdown guardando o número de cada página como âncora <code>{{p.NN}}</code> — sem ela não há citação ABNT de livro. A âncora não atrapalha os tipos que não a exigem (lei, acórdão). Digitalizado ainda sem OCR não é convertível: aparece no log como <b>PULADO</b>, com a instrução de voltar à etapa 2.',
-  a:[['Converter pasta','roda <code>injetar_paginas.py</code> (no venv) para cada PDF pesquisável do <code>controle.csv</code>, preferindo a cópia <code>_OCR</code>; o log lista os aptos e os pulados.'],
+  a:[['Converter tudo','roda <code>injetar_paginas.py</code> (no venv) para cada PDF pesquisável do <code>controle.csv</code> — as fontes da última triagem —, preferindo a cópia <code>_OCR</code>; o log lista os aptos e os pulados. Dois PDFs de pastas diferentes com o mesmo nome disputariam o mesmo markdown: o segundo é <b>pulado</b>, com o caminho do primeiro no log.'],
      ['📄 / Converter seleção','o mesmo, só nos arquivos que você escolher (pode misturar pastas); valida as âncoras ao final. Aceita ePUB/MOBI via Calibre (sem paginação fixa — aviso no log).'],
      ['offset / romanas','ajustes de paginação impressa: se a página "1" do livro é a 13ª folha do PDF, offset 12; "romanas até" = nº de folhas do prefácio em algarismos romanos.']],
   s:'Um <code>.md</code> por PDF em <code>2-MARKDOWN-BRUTO/</code>, com a ficha YAML pré-preenchida (tipo provável e idioma da triagem).'},
@@ -3784,6 +4122,14 @@ async function estado(){
   rootWsl.textContent = s.cfg.root || '';
   rootWsl.title = s.cfg.root || '';
   bPdf.textContent = s.n_pdfs + ' PDFs';
+  CFG_ROOT = s.cfg.root || '';
+
+  // fontes: o servidor é a fonte da verdade (a seleção sobrevive ao F5)
+  if(!FONTES_SALVANDO)
+    FONTES = (s.cfg.fontes||[]).map(f=>({path:f.path, tipo:f.tipo, rec:f.rec!==false}));
+  FONTES_EST = s.fontes || {};
+  const assin = JSON.stringify([FONTES, FONTES_EST.itens||[], FONTES_EST.colisoes||[]]);
+  if(assin !== FONTES_ASSIN){ FONTES_ASSIN = assin; renderFontes(); }
 
   const j = s.job;
   // auditoria concluída → o relatório-triagem abre sozinho no slideover
@@ -3857,6 +4203,7 @@ async function estado(){
   renderProg(j);
 }
 renderFila();
+renderFontes();   // o estado() logo abaixo repõe a lista salva no servidor
 estado(); setInterval(estado, 1500);
 </script>
 """
@@ -3865,7 +4212,9 @@ estado(); setInterval(estado, 1500);
 def main():
     ap = argparse.ArgumentParser(description="Painel do Acervo (WSL2)")
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--root", default=None, help="pasta do acervo (Windows ou WSL)")
+    ap.add_argument("--root", default=None,
+                    help="pasta de trabalho — onde nascem o controle.csv e as "
+                         "saídas (Windows ou WSL)")
     ap.add_argument("--scripts", default=None,
                     help="pasta com aplicar_ocr.sh e os .py")
     ap.add_argument("--venv", default=None)
@@ -3885,7 +4234,7 @@ def main():
     if not CFG["venv"]:
         CFG["venv"] = str(Path.home() / "venvs/acervo")
     if CFG["root"] and not Path(CFG["root"]).is_dir():
-        print(f"AVISO: pasta do acervo salva não existe mais: {CFG['root']}")
+        print(f"AVISO: pasta de trabalho salva não existe mais: {CFG['root']}")
         CFG["root"] = ""
 
     try:

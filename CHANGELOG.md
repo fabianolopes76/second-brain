@@ -5,6 +5,63 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.23.0] — 2026-08-12 · Fontes múltiplas — o acervo deixa de ser "uma pasta"
+
+O painel tinha **uma única entrada**: uma pasta, que era ao mesmo tempo a
+fonte dos PDFs e a oficina onde nasciam `controle.csv` e as pastas de
+saída. Quem tem os livros espalhados por `Downloads`, `OneDrive/Documents`
+e uma pasta de julgados precisava copiar tudo para um lugar só antes de
+começar — e "processar só estes três" não existia fora da etapa 3.
+
+Os dois papéis agora são separados: a pasta continua sendo a **oficina**,
+e o que se processa vira uma **lista de fontes** — pastas inteiras e
+arquivos avulsos, de lugares distintos, misturados.
+
+### Adicionado
+- **Fontes (card 01)**: lista de pastas e arquivos escolhidos no
+  navegador, cada um com sua contagem de PDFs. **📁 pastas inteiras** e
+  **📄 arquivos avulsos** convivem na mesma lista, de discos e diretórios
+  diferentes. Nada é movido nem copiado: as saídas vão todas para a pasta
+  de trabalho, e os `_OCR.pdf` nascem ao lado de cada original.
+- **Navegador em modo misto**: no mesmo modal, a caixinha de uma pasta a
+  seleciona **inteira** enquanto o nome continua entrando nela para
+  procurar mais fundo; a seleção **acumula entre visitas** a pastas
+  diferentes, e "Marcar todos" abrange pastas e arquivos do nível.
+- **↳ subpastas por fonte**: cada pasta da lista tem seu próprio
+  interruptor (ligado por padrão) — dá para pegar uma árvore inteira e,
+  ao lado dela, só o nível de outra.
+- **A seleção é persistente**: mora no `config.json`, junto do resto da
+  configuração. Sobrevive ao F5 e ao reinício do painel — ao contrário da
+  fila da etapa 3, que segue voluntariamente volátil.
+- **Aviso de nome repetido**: dois PDFs de fontes diferentes com o mesmo
+  nome virariam o mesmo markdown. O card 01 avisa em vermelho (com os
+  caminhos) e a conversão **pula o segundo**, dizendo de onde veio o
+  primeiro — nada é sobrescrito em silêncio.
+- **`FILES_FROM`** no `aplicar_ocr.sh`: variável opcional com a lista de
+  PDFs (separada por NUL) que substitui o `find` em `$ROOT`. É por ela
+  que o painel entrega a seleção — e o script segue utilizável sozinho,
+  no terminal, exatamente como antes.
+- As fontes já escolhidas viram **atalho na barra lateral** do navegador:
+  voltar a uma delas para acrescentar mais um livro é um clique.
+
+### Mudado
+- "Pasta do acervo" passa a se chamar **"Pasta de trabalho"** — é o que
+  ela sempre foi de fato: o lugar do `controle.csv`, do
+  `2-MARKDOWN-BRUTO/` e do `3-MARKDOWN-LIMPO/`.
+- Etapa 3: o botão "Converter pasta" virou **"Converter tudo"** — ele
+  converte o que está no `controle.csv`, ou seja, as fontes da última
+  triagem.
+- O badge de PDFs do cabeçalho e o que a triagem vai processar passam a
+  sair da **mesma varredura**: divergir deixou de ser possível.
+- Triagem/OCR com seleção vazia de PDFs agora recusam com uma frase que
+  diz o que fazer, em vez de rodar e imprimir "Encontrados 0 PDF(s)".
+
+### Compatibilidade
+- **Lista de fontes vazia = comportamento anterior, bit a bit**: sem
+  seleção, o `FILES_FROM` nem chega a ser usado e o `aplicar_ocr.sh`
+  varre a pasta de trabalho com o mesmo `find` de sempre. Acervos em
+  andamento não sentem a mudança.
+
 ## [3.22.0] — 2026-07-18 · Radar por IA — a etapa 9 destravada pelo painel
 
 A etapa 9 nunca "acendia": o radar é só a metade CORRELADORA de um ciclo

@@ -124,10 +124,27 @@ Nomes de arquivo jurídico são longos (*“Teoria da imposição tributária (I
 
 Todo campo de caminho tem um botão que abre o **navegador de pastas**:
 
-- **Barra lateral com atalhos**: discos do Windows (`💾 Windows C:`), pastas do usuário (Documents, Downloads, Desktop) e locais do WSL2 (`🐧 Home`).
+- **Barra lateral com atalhos**: discos do Windows (`💾 Windows C:`), pastas do usuário (Documents, Downloads, Desktop), locais do WSL2 (`🐧 Home`) e as **fontes já escolhidas** (`Fonte · …`), para voltar a elas num clique.
 - **Breadcrumb** para voltar a qualquer nível; botão **↑ Acima**.
 - **Contagem de PDFs** em cada pasta — ajuda a achar o acervo sem abrir tudo.
 - Pastas sem permissão são tratadas sem quebrar a navegação.
+
+### Selecionar as fontes (o que processar) — modo misto
+
+O botão **➕ Adicionar pastas/arquivos…**, no card 01, abre o navegador em **modo misto**: pastas e arquivos podem ser selecionados **na mesma passada**.
+
+- Na linha de uma pasta, a **caixinha** a leva **inteira**; o **nome** continua entrando nela para procurar mais fundo. É a mesma linha, com dois gestos distintos.
+- Arquivos soltos (PDF/ePUB/MOBI) têm caixinha como sempre; **Marcar todos** abrange pastas e arquivos do nível.
+- A seleção **acumula entre pastas e discos diferentes** — navegue, marque mais, e só então **Adicionar selecionados**.
+- Cada pasta da lista tem seu **↳ subpastas** (ligado por padrão) e mostra **quantos PDFs traz**.
+- A lista fica salva no `~/.config/acervo/config.json`: sobrevive ao F5 e ao reinício do painel.
+- **Lista vazia** = varre a pasta de trabalho inteira, como o painel sempre fez.
+
+A pasta de trabalho segue sendo o endereço das **saídas** (`controle.csv`, `2-MARKDOWN-BRUTO/`, `3-MARKDOWN-LIMPO/`). Nada é movido: os `_OCR.pdf` nascem ao lado de cada original.
+
+> **Nomes repetidos entre fontes:** dois `Manual.pdf` de pastas diferentes virariam o mesmo `Manual.md`. O card 01 avisa (com os caminhos) e a conversão **pula o segundo**, dizendo de onde veio o primeiro — nada é sobrescrito.
+
+> **Pela linha de comando:** a mesma seleção se faz com `FILES_FROM=lista bash aplicar_ocr.sh`, onde `lista` tem os caminhos separados por NUL. Sem essa variável, o script varre `$ROOT` como sempre.
 
 ### Selecionar vários arquivos (fila de processamento)
 
@@ -156,7 +173,7 @@ Exemplo real, 4 obras em 4 idiomas numa tacada:
 
 > **ePUB/MOBI na fila:** são convertidos pelo Calibre, mas o app **avisa** que esses formatos não têm paginação fixa — não servem para citação ABNT com página. Para citar, use o PDF paginado.
 
-> **Quando usar a fila × a pasta inteira:** a fila é para lotes escolhidos a dedo (uma remessa nova, um caso específico). Para varrer todo o acervo, use **Triagem → OCR** (Fases 1 e 2), que detecta sozinho o que precisa de OCR.
+> **Fila (etapa 3) × fontes (card 01):** a **fila** converte na hora um punhado de arquivos já pesquisáveis, sem passar pela triagem — é transitória, some ao recarregar a página. As **fontes** definem o acervo que o pipeline inteiro processa (Triagem → OCR → …) e ficam salvas. Para uma remessa nova de escaneados, escolha-a como fonte e rode **Triagem → OCR**; para converter dois PDFs que já têm texto, a fila é o caminho curto.
 
 ## Resolver dependências em um clique
 
