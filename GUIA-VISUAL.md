@@ -1,4 +1,4 @@
-# 🖱️ Guia Visual do Acervo — do PDF ao segundo cérebro **sem linha de comando**
+# 🖱️ Guia Visual do Acervo — do PDF (ou ePUB) ao segundo cérebro **sem linha de comando**
 
 Este guia é para quem vai **usar** o Acervo pelo painel no navegador — sem digitar nenhum comando. Tudo o que o pipeline faz (triagem, OCR, conversão, validação, publicação no Obsidian, radar) está a um clique de distância.
 
@@ -27,17 +27,17 @@ O painel tem 4 seções numeradas. Você vai passar 90% do tempo na **03 · Pipe
 ┌──────────────────────────────────────────────────────────────┐
 │  Acervo · Painel de Controle                    ● pronto     │
 ├──────────────────────────────────────────────────────────────┤
-│  01 · Configuração   ← seus PDFs + botão [⚙ Ambiente]        │
+│  01 · Configuração   ← suas fontes + botão [⚙ Ambiente]      │
 │  02 · Execução       ← o "vidro da máquina": log ao vivo     │
 │  03 · Pipeline       ← O TRILHO: 9 etapas + ✎, em ordem     │
 │      └ Qualidade: [📋 Fichas] ← conferir/corrigir os YAML    │
-│  04 · Triagem        ← a tabela com o raio-X de cada PDF     │
+│  04 · Triagem        ← a tabela com o raio-X de cada fonte   │
 └──────────────────────────────────────────────────────────────┘
    (⚙ Ambiente e 📋 Fichas abrem painéis laterais: o primeiro é o
     semáforo das ferramentas; o segundo, a mesa de revisão das fichas)
 ```
 
-### 01 · Configuração — diga onde estão os PDFs
+### 01 · Configuração — diga onde estão os arquivos
 
 São **duas coisas diferentes**, e desde a v3.23 elas ficam separadas:
 
@@ -47,7 +47,7 @@ São **duas coisas diferentes**, e desde a v3.23 elas ficam separadas:
 **A pasta de trabalho:**
 
 1. Clique em **📁 Procurar…** ao lado de "Pasta de trabalho".
-2. Navegue pelo seletor: ele mostra os discos do Windows (`💾 Windows C:`), suas pastas (Documents, Downloads…) e as do Linux. **Cada pasta mostra quantos PDFs tem** — isso ajuda a achar o acervo.
+2. Navegue pelo seletor: ele mostra os discos do Windows (`💾 Windows C:`), suas pastas (Documents, Downloads…) e as do Linux. **Cada pasta mostra quantos arquivos-fonte tem** (PDF, ePUB, MOBI, AZW3) — isso ajuda a achar o acervo.
 3. Selecione a pasta e clique **Definir**.
 
 > **Clicou em "Definir" sem escolher a pasta?** Aparece uma advertência em vermelho logo abaixo do campo — ela some sozinha assim que você escolhe (ou digita) a pasta.
@@ -70,10 +70,10 @@ Fontes — o que processar · 3 item(ns) · 47 PDFs
  [➕ Adicionar pastas/arquivos…]  [Limpar tudo]
 ```
 
-- **↳ subpastas** — cada pasta tem o seu (ligado por padrão). Desligue para levar só os PDFs soltos naquele nível.
+- **↳ subpastas** — cada pasta tem o seu (ligado por padrão). Desligue para levar só os arquivos soltos naquele nível.
 - **×** tira o item da lista; **Limpar tudo** volta ao comportamento clássico (processar a pasta de trabalho inteira).
 - **Nada é movido nem copiado**: os `_OCR.pdf` nascem ao lado de cada original, na pasta de origem. Só os markdowns vão para a pasta de trabalho.
-- O contador do topo (**"— PDFs"**) mostra o total das fontes: é exatamente o que a Triagem vai analisar.
+- O contador do topo (**"— arquivos"**) mostra o total das fontes: é exatamente o que a Triagem vai analisar.
 
 > **⚠ Aviso de nome repetido.** Se duas fontes tiverem PDFs de mesmo nome (dois `Manual.pdf`), eles virariam o **mesmo** markdown. O painel avisa em vermelho, com os dois caminhos, e na conversão o segundo é **pulado** — nada é sobrescrito. Renomeie um deles na origem para aproveitar os dois.
 
@@ -112,10 +112,10 @@ O coração do painel. As etapas formam um trilho em 6 grupos, e **o painel lê 
 
 ```
 ENTRADA
-  (1) Triagem          [Analisar]                → raio-X dos PDFs, sem alterar nada
+  (1) Triagem          [Analisar]                → raio-X das fontes, sem alterar nada
   (2) OCR              [Aplicar OCR]             → só nos que precisam, no idioma certo
 CONVERSÃO
-  (3) Paginação        [Converter] [📁 arquivo]  → PDF → texto COM âncoras de página
+  (3) Paginação        [Converter] [📁 arquivo]  → PDF/e-book → texto COM âncoras
 PREPARO (mecânico, sem IA)
   (4) Limpar OCR       [Limpar]                  → hifenização, cabeçalhos repetidos
   (5) Fatiar           [Fatiar]                  → livro grande → índice + fatias
@@ -131,9 +131,11 @@ MANUTENÇÃO
 
 **O que cada etapa faz, em uma frase:**
 
-1. **Triagem** — analisa cada PDF (tipo provável, idioma, precisa de OCR?) e monta a tabela da seção 04. *Não altera nenhum arquivo.*
-2. **OCR** — aplica reconhecimento de texto **só** nos PDFs escaneados, preservando o original (cria uma cópia `_OCR`).
-3. **Paginação** — converte para texto **guardando o número de cada página** (`{{p.45}}`). Sem isso, não há citação ABNT. Dá para processar um arquivo avulso pelo botão 📁, informando o *offset* se a página impressa não bater.
+1. **Triagem** — analisa cada fonte (formato, tipo provável, idioma, precisa de OCR?) e monta a tabela da seção 04. E-book entra na **rota A**, já pronto: não precisa de OCR. *Não altera nenhum arquivo.*
+2. **OCR** — aplica reconhecimento de texto **só** nos PDFs escaneados, preservando o original (cria uma cópia `_OCR`). E-book nunca passa por aqui: já é texto.
+3. **Paginação** — converte para texto **guardando o localizador de cada trecho**. Sem isso, não há citação ABNT. Dá para processar um arquivo avulso pelo botão 📁, informando o *offset* se a página impressa não bater.
+
+   **PDF** → `{{p.45}}`, a página da folha. **ePUB** → `{{p.45}}` também, *se* o editor incluiu o índice de páginas da edição impressa (`page-list`); quando não incluiu, a citação sai por **posição** (`{{loc.37}}` → *local. 37*), numa escala deste acervo — **não é a *location* do Kindle**. **MOBI/AZW** quase nunca trazem paginação: o mapa do Kindle fica num arquivo separado (`.apnx`) que não sobrevive à conversão. O log diz, arquivo por arquivo, qual rota usou — e a ficha guarda isso em `paginacao_origem`, para você saber se a página é do editor ou um palpite nosso. Para citar por página numa peça, prefira a edição paginada.
 4. **Limpar** — conserta o que o OCR quebrou (palavras hifenizadas, cabeçalhos repetidos). Mecânico, de graça.
 5. **Fatiar** — divide livros grandes em fatias de leitura rápida + uma nota-índice; **documento pequeno é copiado inteiro** ao 3-MARKDOWN-LIMPO (também publica, como nota única). É o formato que a IA consome bem.
 6. **Qualidade** — o exame completo num clique: âncoras íntegras (presença, duplicadas, ordem, lacunas), YAML coerente com o tipo e a **nota** de cada arquivo (PRONTO/PARCIAL/REPROVADO). Ao terminar, o **relatório-triagem abre sozinho** — do grave ao irrelevante, cada item com a ação (e atalho ✎ para corrigir a ficha). Reabra pelo botão **📄 Relatório**. E para acelerar a revisão: **🤖 Preencher com IA** gera um prompt pronto (com as fichas pendentes e um trecho de cada documento) para você colar em **qualquer IA** — Gemini, ChatGPT, Claude…; cole a resposta de volta e o painel **valida e aplica** nas fichas, com backup automático e botão **↩ Reverter** (nada é gravado sem validação; vocabulário inventado pela IA é ignorado com aviso).
@@ -141,7 +143,7 @@ MANUTENÇÃO
 8. **Auditar vault** — verifica as *ligações* do cérebro: fatia órfã, link quebrado, nota que "sumiu" dos painéis por erro de preenchimento.
 9. **Radar** — mantém o cérebro atualizado, em duas metades. **📡 Buscar novidades com IA** (v3.22): o painel gera um prompt de monitoramento — já com o seu `fontes.md`, as áreas e as **normas que o seu acervo cita** — para você colar em qualquer IA **com busca na web**; cole a resposta de volta e os achados são gravados em `Radar/` (validados: achado **sem link de fonte é rejeitado**; nada é sobrescrito; **↩ Reverter** desfaz a leva). Depois, **Fila de revisão** cruza os achados com as notas do acervo que citam os mesmos identificadores (Lei nº, Súmula, Tema — por regra, não por palpite) e "Sinalizar A-conferir" marca as afetadas — **a decisão de reclassificar é sempre sua**. Dica: rode **🔗 Conectar** antes; o prompt do radar fica muito mais certeiro com o catálogo pronto.
 
-### 04 · Triagem — o raio-X dos seus PDFs
+### 04 · Triagem — o raio-X das suas fontes
 
 Depois da etapa 1, esta tabela mostra, para cada arquivo: idioma detectado, se precisa de OCR, a rota de conversão e o **tipo provável** (`legislacao`, `livro`, `jurisprudencia`…).
 
@@ -174,7 +176,7 @@ A **referência ABNT** ninguém digita à mão: com a ficha completa e o campo v
 
 ## 3 · O dia a dia em 8 cliques
 
-Um lote novo de PDFs, do download ao Obsidian:
+Um lote novo de arquivos (PDF, ePUB, MOBI), do download ao Obsidian:
 
 1. Duplo-clique em **Iniciar-Acervo.bat** e, no card 01, aponte as **fontes** para onde os PDFs já estão (**➕ Adicionar pastas/arquivos…**). *Não precisa mais juntar tudo numa pasta antes — mas, se preferir, copiar os PDFs para a pasta de trabalho e deixar a lista de fontes vazia funciona igual.*
 2. Confira o contador **"— PDFs"** no topo: é o que vai ser processado.

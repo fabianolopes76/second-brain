@@ -245,7 +245,8 @@ def validar(caminho: Path, gerar: bool) -> bool:
         n = len(padrao.findall(corpo))
         if n == 0:
             print(f"  ✗ SEM âncoras de {esperado_tipo}. Este tipo EXIGE localizador para citar.")
-            print("    → Reinjete: python injetar_paginas.py <pdf-fonte> -o <saida.md>")
+            print("    → Se a fonte é PDF:   python injetar_paginas.py <pdf> -o <saida.md>")
+            print("    → Se é ePUB/MOBI/AZW: python3 converter_ebook.py <ebook> -o <saida.md>")
             ok = False
         else:
             print(f"  ✓ Âncoras de {esperado_tipo}: {n}")

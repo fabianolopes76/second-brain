@@ -272,6 +272,12 @@ def diagnostico():
     # projeto (tenta apt; sem pacote, compila de github.com/agl/jbig2enc).
     check("jbig2enc (compressão do PDF)", "jbig2", _dica_jbig2())
 
+    # Rota A (e-book). Sem estes dois, a etapa 3 falha SÓ nos ePUB/MOBI — e
+    # antes falhava em silêncio, porque o comando encadeado engolia o erro.
+    check("pandoc (ePUB → Markdown)", "pandoc", "sudo apt install -y pandoc")
+    check("ebook-convert (MOBI/AZW → ePUB, calibre)", "ebook-convert",
+          "sudo apt install -y calibre")
+
     # Idiomas do Tesseract (acervo multilíngue: pt/en/de/fr/it/es)
     try:
         r = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True)
@@ -321,7 +327,8 @@ def diagnostico():
                               f"source {vq}/bin/activate && pip install pymupdf"})
 
     # scripts
-    for s in ["aplicar_ocr.sh", "injetar_paginas.py", "verificar_ancoras.py",
+    for s in ["aplicar_ocr.sh", "injetar_paginas.py", "converter_ebook.py",
+              "verificar_ancoras.py",
               "validar_yaml_abnt.py", "taxonomia.py", "frontmatter.py",
               "triagem.py", "auditar_vault.py", "publicar.py", "radar.py",
               "comum.py"]:
@@ -392,7 +399,7 @@ def atalhos():
 
 def listar_pasta(caminho: str, modo: str = "dir"):
     """Lista subpastas (e arquivos, quando o modo pede) de um diretório.
-    modo: 'dir' = só pastas | 'file' = pastas + PDFs (a pasta só navega) |
+    modo: 'dir' = só pastas | 'file' = pastas + fontes (a pasta só navega) |
     'misto' = o mesmo, mas a pasta TAMBÉM pode ser selecionada inteira."""
     p = Path(caminho) if caminho else Path.home()
     if not p.is_dir():
@@ -405,15 +412,15 @@ def listar_pasta(caminho: str, modo: str = "dir"):
                 continue
             try:
                 if item.is_dir():
-                    n_pdf = 0
+                    n_fonte = 0
                     try:  # contagem rasa, só para orientar o usuário
-                        n_pdf = sum(1 for f in item.iterdir()
-                                    if f.suffix.lower() == ".pdf")
+                        n_fonte = sum(1 for f in item.iterdir()
+                                      if f.suffix.lower() in comum.EXTENSOES_FONTE)
                     except (PermissionError, OSError):
                         pass
-                    pastas.append({"nome": item.name, "path": str(item), "pdfs": n_pdf})
+                    pastas.append({"nome": item.name, "path": str(item), "fontes": n_fonte})
                 elif (modo in ("file", "misto")
-                      and item.suffix.lower() in (".pdf", ".epub", ".mobi")):
+                      and item.suffix.lower() in comum.EXTENSOES_FONTE):
                     arquivos.append({"nome": item.name, "path": str(item),
                                      "tam": item.stat().st_size})
             except (PermissionError, OSError):
@@ -438,22 +445,23 @@ def listar_pasta(caminho: str, modo: str = "dir"):
         "breadcrumb": partes,
         "pastas": pastas,
         "arquivos": arquivos,
-        "n_pdfs_aqui": sum(1 for f in p.glob("*.pdf")),
+        "n_fontes_aqui": sum(1 for f in p.iterdir()
+                            if f.suffix.lower() in comum.EXTENSOES_FONTE),
     }
 
 
-def progresso(n_pdfs=None):
+def progresso(n_fontes=None):
     """Em que ponto do workflow o acervo está? Guia a UI e libera os passos.
 
-    n_pdfs: contagem já apurada pelo chamador — evita varrer as fontes duas
+    n_fontes: contagem já apurada pelo chamador — evita varrer as fontes duas
     vezes no mesmo poll (o /api/estado bate a cada 1,5 s sobre o 9p do WSL)."""
-    r = {"pdfs": 0, "csv": 0, "ocr_pend": 0, "bruto": 0, "limpo": 0,
+    r = {"fontes": 0, "csv": 0, "ocr_pend": 0, "bruto": 0, "limpo": 0,
          "fatias": 0, "auditado": False, "vault": 0, "vault_auditado": False,
          "radar": 0, "radar_novos": 0}
     if not CFG["root"] or not Path(CFG["root"]).is_dir():
         return r
     base = Path(CFG["root"])
-    r["pdfs"] = contar_pdfs() if n_pdfs is None else n_pdfs
+    r["fontes"] = contar_fontes() if n_fontes is None else n_fontes
 
     linhas = ler_csv()
     r["csv"] = len(linhas)
@@ -540,13 +548,17 @@ def progresso(n_pdfs=None):
 PASTAS_PRODUTO = {"2-MARKDOWN-BRUTO", "3-MARKDOWN-LIMPO", "4-OBSIDIAN-VAULT"}
 
 
-def _pdfs_do_nivel(pasta: str, arqs) -> list:
-    """Os PDFs-fonte de UM nível de diretório, já em ordem estável."""
+def _fontes_do_nivel(pasta: str, arqs) -> list:
+    """Os arquivos-fonte de UM nível de diretório, já em ordem estável.
+
+    Fonte = PDF ou e-book (comum.EXTENSOES_FONTE). Antes só PDF entrava, e um
+    ePUB escolhido como fonte sumia aqui: o chip mostrava "0", o contador não
+    subia e a etapa 1 acusava "Nenhum PDF nas fontes selecionadas"."""
     nomes = set(arqs)
     saida = []
     for a in sorted(arqs, key=str.lower):
         base, ext = os.path.splitext(a)
-        if ext.lower() != ".pdf":
+        if ext.lower() not in comum.EXTENSOES_FONTE:
             continue
         # copia _OCR só é "saída" se o original ainda existe ao lado;
         # órfã (original apagado) conta como fonte, igual à triagem
@@ -556,14 +568,15 @@ def _pdfs_do_nivel(pasta: str, arqs) -> list:
     return saida
 
 
-def _pdfs_de(origem: str, rec: bool = True) -> list:
-    """Os PDFs de um item da seleção: arquivo avulso, ou pasta (com ou sem
-    subpastas). Arquivo escolhido À MÃO entra como está — inclusive um _OCR,
+def _fontes_de(origem: str, rec: bool = True) -> list:
+    """Os arquivos-fonte de um item da seleção: arquivo avulso, ou pasta (com ou
+    sem subpastas). Arquivo escolhido À MÃO entra como está — inclusive um _OCR,
     porque a escolha explícita do usuário vale mais que a heurística."""
     p = Path(origem)
     try:
         if p.is_file():
-            return [str(p)] if p.suffix.lower() == ".pdf" else []
+            return ([str(p)] if p.suffix.lower() in comum.EXTENSOES_FONTE
+                    else [])
         if not p.is_dir():
             return []
     except OSError:
@@ -578,10 +591,10 @@ def _pdfs_de(origem: str, rec: bool = True) -> list:
             dirs[:] = sorted((d for d in dirs
                               if d not in PASTAS_PRODUTO and not d.startswith(".")),
                              key=str.lower)
-            saida += _pdfs_do_nivel(pasta, arqs)
+            saida += _fontes_do_nivel(pasta, arqs)
     else:
         try:
-            saida += _pdfs_do_nivel(str(p), [a for a in os.listdir(str(p))
+            saida += _fontes_do_nivel(str(p), [a for a in os.listdir(str(p))
                                              if os.path.isfile(os.path.join(str(p), a))])
         except OSError:
             pass
@@ -606,12 +619,12 @@ def fontes_resumo() -> dict:
     """
     itens, arquivos, vistos = [], [], set()
     for f in fontes_itens():
-        pdfs = _pdfs_de(f["path"], f.get("rec", True))
-        for p in pdfs:
+        achados = _fontes_de(f["path"], f.get("rec", True))
+        for p in achados:
             if p not in vistos:      # fontes podem se sobrepor
                 vistos.add(p)
                 arquivos.append(p)
-        itens.append({**f, "n": len(pdfs),
+        itens.append({**f, "n": len(achados),
                       "existe": os.path.exists(f["path"])})
 
     # Dois PDFs de fontes distintas com o mesmo nome viram o MESMO .md no
@@ -642,11 +655,11 @@ def fontes_resumo() -> dict:
 
 
 def fontes_expandidas() -> list:
-    """A lista plana de PDFs a processar, na ordem em que foi selecionada."""
+    """A lista plana de fontes (PDF + e-book) a processar, na ordem selecionada."""
     return fontes_resumo()["arquivos"]
 
 
-def contar_pdfs():
+def contar_fontes():
     return fontes_resumo()["total"]
 
 
@@ -668,11 +681,11 @@ def _estado_json():
         fontes = fontes_resumo()
         magro = {k: v for k, v in fontes.items() if k != "arquivos"}
         disco = {"diag": diagnostico(), "csv": ler_csv(),
-                 "n_pdfs": fontes["total"], "fontes": magro,
+                 "n_fontes": fontes["total"], "fontes": magro,
                  "prog": progresso(fontes["total"])}
         _ESTADO_BOM = disco
     except OSError:
-        disco = _ESTADO_BOM or {"diag": [], "csv": [], "n_pdfs": 0,
+        disco = _ESTADO_BOM or {"diag": [], "csv": [], "n_fontes": 0,
                                 "fontes": {"itens": [], "total": 0,
                                            "colisoes": [], "repetidos": 0,
                                            "selecionado": False},
@@ -683,18 +696,31 @@ def _estado_json():
 # ---------------------------------------------------------------------------
 # Ações do pipeline
 # ---------------------------------------------------------------------------
-def _gravar_lista_fontes(arquivos) -> str:
+def _gravar_lista_fontes(arquivos, nome="acervo-fontes.lst") -> str:
     """A seleção expandida, num arquivo NUL-separado para o aplicar_ocr.sh.
 
     Vive no tempdir do Linux — nunca dentro do acervo, que é sincronizado
     pelo Dropbox. Caminho fixo e reescrito a cada execução: sem faxina
     pendente, e inspecionável quando algo dá errado."""
-    lista = Path(tempfile.gettempdir()) / "acervo-fontes.lst"
+    lista = Path(tempfile.gettempdir()) / nome
     lista.write_bytes(b"".join(str(a).encode() + b"\0" for a in arquivos))
     return str(lista)
 
 
 def acao_triagem(dry=True, force=False, modo="manter"):
+    """Etapa 1/2 — analisa as fontes e monta o controle.csv (e oceriza, se dry=0).
+
+    DUAS ROTAS, UM CSV. O aplicar_ocr.sh é PDF por dentro (pdfinfo, pdftotext,
+    pdfimages) e não tem como analisar um ePUB; e o modo FILES_FROM dele NÃO
+    filtra extensão — só testa `-f` —, então um e-book na lista chegaria ao
+    ocrmypdf, falharia com rc=2 e viraria linha "FALHOU" eterna no CSV. Por
+    isso: o bash recebe SÓ PDFs, e as linhas de e-book são acrescentadas depois
+    pelo triagem.py --ebooks.
+
+    ORDEM IMPORTA: o csv_init do bash faz `> $CSV_FILE`, ou seja TRUNCA o
+    arquivo. Então o bash roda PRIMEIRO (escreve cabeçalho + PDFs) e o passo de
+    e-books só acrescenta. Quando não há PDF nenhum, o bash não roda — e aí é o
+    passo de e-books que precisa escrever o cabeçalho (--com-cabecalho)."""
     sh = Path(CFG["scripts"]) / "aplicar_ocr.sh"
     env = {
         "ROOT": CFG["root"],
@@ -711,17 +737,48 @@ def acao_triagem(dry=True, force=False, modo="manter"):
     # SÓ com seleção explícita a lista pronta entra em cena. Sem ela, o script
     # varre $ROOT como sempre fez — o acervo em uso não sente a mudança.
     fontes = fontes_resumo()
+    todos = fontes["arquivos"] if fontes["selecionado"] else _fontes_de(CFG["root"])
+    ebooks = [a for a in todos if comum.eh_ebook(a)]
+    pdfs = [a for a in todos if not comum.eh_ebook(a)]
+
     if fontes["selecionado"]:
-        env["FILES_FROM"] = _gravar_lista_fontes(fontes["arquivos"])
+        env["FILES_FROM"] = _gravar_lista_fontes(pdfs)
+
+    tri = Path(CFG["scripts"]) / "triagem.py"
+    csv_file = env["CSV_FILE"]
+    partes = []
+    # Sem PDF, o bash não tem o que fazer — e rodá-lo truncaria o CSV para
+    # escrever "Encontrados 0 PDF(s)" e nada mais.
+    roda_bash = bool(pdfs) or not fontes["selecionado"]
+    if roda_bash:
+        partes.append(f'bash {shlex.quote(str(sh))}')
+    elif ebooks:
+        partes.append('echo "Nenhum PDF na selecao — so e-books (nao precisam '
+                      'de OCR)."')
+
+    if ebooks:
+        lista_eb = _gravar_lista_fontes(ebooks, "acervo-ebooks.lst")
+        cab = "" if roda_bash else " --com-cabecalho"
+        partes.append(
+            f'echo "" ; echo "=== {len(ebooks)} e-book(s) -> planilha (rota A) ===" ; '
+            f'python3 {shlex.quote(str(tri))} --ebooks {shlex.quote(lista_eb)}'
+            f'{cab} >> {shlex.quote(csv_file)}')
 
     nome = "Triagem (dry-run)" if dry else f"OCR em lote (modo={modo})"
     if fontes["selecionado"]:
-        nome += f" · {fontes['total']} PDF(s) de {len(fontes['itens'])} fonte(s)"
-    return JOB.start(nome, ["bash", str(sh)], cwd=CFG["root"], env=env)
+        nome += f" · {len(pdfs)} PDF(s) + {len(ebooks)} e-book(s)"
+    if not partes:
+        return False, "Nenhuma fonte para analisar."
+    return JOB.start(nome, " ; ".join(partes), cwd=CFG["root"], env=env)
 
 
 def acao_paginar(offset=0, romanas=0, reconverter=False):
-    """Converte a pasta: TODOS os PDFs pesquisáveis do CSV → markdown com âncoras.
+    """Converte a pasta: todas as fontes prontas do CSV → markdown com âncoras.
+
+    DUAS ROTAS, roteadas pela coluna `formato`: PDF pesquisável vai ao
+    injetar_paginas.py (venv, PyMuPDF) e ganha {{p.NN}}; e-book vai ao
+    converter_ebook.py (python3, stdlib) e ganha {{p.NN}} se o editor registrou
+    a paginação impressa, ou {{loc.NN}} (posição) se não.
 
     Antes só convertia quem exige âncora de página — legislação/jurisprudência
     (que não exigem) ficavam de fora e o botão parecia quebrado. A âncora extra
@@ -742,11 +799,17 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
 
     vpy = Path(CFG["venv"]) / "bin" / "python"
     script = Path(CFG["scripts"]) / "injetar_paginas.py"
+    script_eb = Path(CFG["scripts"]) / "converter_ebook.py"
     saida = Path(CFG["root"]) / "2-MARKDOWN-BRUTO"
     saida.mkdir(exist_ok=True)
 
     cmds, nomes, sem_ocr, ja_convertidos, colididos = [], [], [], [], []
-    donos = {}          # markdown de destino -> PDF que o reivindicou primeiro
+    donos = {}          # markdown de destino -> (fonte que reivindicou, é e-book?)
+    # PDF ANTES de e-book: a mesma obra costuma existir nos dois formatos
+    # ("Curso.pdf" e "Curso.epub" disputam "Curso.md"), e quem deve ganhar é o
+    # PDF — ele tem a paginação da edição impressa, que é o que serve para citar.
+    linhas = sorted(linhas, key=lambda x: (x.get("formato") or "pdf").strip().lower()
+                    in comum.EXTENSOES_EBOOK_SEM_PONTO)
     for l in linhas:
         # prefere o _OCR quando existe; senão, o original
         src = l.get("arquivo_ocr") or l.get("caminho")
@@ -754,31 +817,45 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
             src = l.get("caminho")
         if not src or not Path(src).exists():
             continue
-        # pesquisável = já tinha texto, ou o OCR produziu a cópia _OCR
-        pesquisavel = (l.get("tem_camada_texto") == "sim"
+        # CSV antigo (16 colunas) não tem `formato`: ausência = pdf, que era o
+        # único formato possível antes.
+        fmt = (l.get("formato") or "").strip().lower()
+        eh_eb = (fmt in comum.EXTENSOES_EBOOK_SEM_PONTO if fmt
+                 else comum.eh_ebook(src))
+        # pesquisável = já tinha texto, ou o OCR produziu a cópia _OCR.
+        # E-book curto-circuita: não tem "camada de texto" a ter — ele É texto.
+        pesquisavel = (eh_eb
+                       or l.get("tem_camada_texto") == "sim"
                        or Path(src).stem.endswith("_OCR"))
         if not pesquisavel:
             sem_ocr.append(Path(src).name)
             continue
         dst = saida / (Path(src).stem.replace("_OCR", "") + ".md")
         if dst in donos:
-            colididos.append((src, donos[dst]))
+            colididos.append((src, donos[dst][0], eh_eb and not donos[dst][1]))
             continue
         if dst.exists() and not reconverter:
             ja_convertidos.append(dst.name)
-            donos[dst] = src
+            donos[dst] = (src, eh_eb)
             continue
-        donos[dst] = src
-        c = [str(vpy), str(script), src, "-o", str(dst)]
-        if offset:
-            c += ["--offset", str(offset)]
-        if romanas:
-            c += ["--romanas-ate", str(romanas)]
-        # Aproveita o palpite de tipo_fonte da triagem para pré-preencher o YAML.
+        donos[dst] = (src, eh_eb)
+
         tf = (l.get("tipo_fonte_provavel") or "").strip()
+        idi = (l.get("idioma") or "").strip()
+        if eh_eb:
+            # Rota A: e-book. Roda no python3 do sistema — o converter_ebook.py
+            # é stdlib, não usa o PyMuPDF do venv. offset/romanas são conceitos
+            # de folha de PDF e não se aplicam.
+            c = ["python3", str(script_eb), src, "-o", str(dst)]
+        else:
+            c = [str(vpy), str(script), src, "-o", str(dst)]
+            if offset:
+                c += ["--offset", str(offset)]
+            if romanas:
+                c += ["--romanas-ate", str(romanas)]
+        # Aproveita o palpite de tipo_fonte da triagem para pré-preencher o YAML.
         if tf and taxonomia.eh_abnt(tf):
             c += ["--tipo-fonte", tf]
-        idi = (l.get("idioma") or "").strip()
         if idi:
             c += ["--idioma", idi]
         cmds.append(" ".join(shlex.quote(x) for x in c))
@@ -794,15 +871,17 @@ def acao_paginar(offset=0, romanas=0, reconverter=False):
                            "arquivo(s) precisam de OCR (etapa 2) antes de converter.")
         return False, "Nenhum arquivo encontrado no disco."
 
-    partes = [f'echo "=== {len(cmds)} PDF(s) pesquisáveis -> 2-MARKDOWN-BRUTO ==="']
+    partes = [f'echo "=== {len(cmds)} arquivo(s) -> 2-MARKDOWN-BRUTO ==="']
     partes += [f'echo {shlex.quote("    " + n)}' for n in nomes]
     partes += [f'echo {shlex.quote("    PULADO (já convertido — ficha preservada): " + n)}'
                for n in ja_convertidos]
     partes += [f'echo {shlex.quote("    PULADO (precisa de OCR — etapa 2): " + n)}'
                for n in sem_ocr]
     partes += ["echo " + shlex.quote(
+                   f"    PULADO (mesmo nome do PDF, que tem paginação real): {src}"
+                   if perdeu_p_pdf else
                    f"    PULADO (nome repetido — o markdown já vem de {dono}): {src}")
-               for src, dono in colididos]
+               for src, dono, perdeu_p_pdf in colididos]
     partes += ['echo ' + shlex.quote(f">> [{i+1}/{len(cmds)}] {nomes[i]}") + f' ; {c}'
                for i, c in enumerate(cmds)]
     return JOB.start(f"Converter tudo ({len(cmds)} arquivo(s))", " ; ".join(partes))
@@ -846,6 +925,7 @@ def acao_lote(arquivos, offset=0, romanas=0, tipo="", idioma=""):
 
     vpy = Path(CFG["venv"]) / "bin" / "python"
     script = Path(CFG["scripts"]) / "injetar_paginas.py"
+    script_eb = Path(CFG["scripts"]) / "converter_ebook.py"
     va = Path(CFG["scripts"]) / "verificar_ancoras.py"
 
     base = CFG["root"] or str(Path(arquivos[0]).parent)
@@ -878,33 +958,32 @@ def acao_lote(arquivos, offset=0, romanas=0, tipo="", idioma=""):
                 f"   AVISO: sobrescrevendo {dst.name} existente — a ficha "
                 "anterior será substituída")
 
-        if src.suffix.lower() in (".epub", ".mobi", ".azw3"):
-            # Rota A (Calibre). ePUB/MOBI não têm paginação fixa — avisa.
-            tmp = dst.with_suffix(".txt")
-            partes.append(
-                f'{cab} ; ebook-convert {shlex.quote(str(src))} {shlex.quote(str(tmp))} '
-                f'--txt-output-formatting=markdown --enable-heuristics --keep-links '
-                f'--txt-output-encoding=utf-8 --chapter "//h:h1" && '
-                f'mv {shlex.quote(str(tmp))} {shlex.quote(str(dst))} && '
-                f'echo "   AVISO: ePUB/MOBI nao tem paginacao fixa -> nao serve para '
-                f'citacao ABNT com pagina. Use o PDF paginado."'
-            )
-            continue
-
-        idi = idioma or _detectar_idioma_de(src)
+        eh_eb = comum.eh_ebook(src)
+        # Idioma: para e-book NÃO se chama o _detectar_idioma_de — ele leria o
+        # ZIP como texto e devolveria lixo binário. O converter_ebook.py detecta
+        # por dentro, sobre o texto já extraído (amostra muito melhor).
+        idi = idioma or ("" if eh_eb else _detectar_idioma_de(src))
         tf = tipo or _tipo_do_nome(src.name)
 
-        c = [str(vpy), str(script), str(src), "-o", str(dst)]
-        if offset:
-            c += ["--offset", str(offset)]
-        if romanas:
-            c += ["--romanas-ate", str(romanas)]
+        if eh_eb:
+            # Rota A: e-book. Página real quando o editor registrou o page-list;
+            # senão, posição. O converter_ebook.py decide, avisa no log e grava
+            # a proveniência na ficha. Roda no python3 do sistema (é stdlib);
+            # offset/romanas são conceitos de folha de PDF.
+            c = ["python3", str(script_eb), str(src), "-o", str(dst)]
+        else:
+            c = [str(vpy), str(script), str(src), "-o", str(dst)]
+            if offset:
+                c += ["--offset", str(offset)]
+            if romanas:
+                c += ["--romanas-ate", str(romanas)]
         if tf and taxonomia.eh_abnt(tf):
             c += ["--tipo-fonte", tf]
         if idi:
             c += ["--idioma", idi]
         partes.append(
-            f'{cab} ; echo "   tipo={tf} idioma={idi or "?"}" ; '
+            f'{cab} ; echo "   tipo={tf or "?"} idioma={idi or "(detecta)"}'
+            f'{" rota=A (e-book)" if eh_eb else ""}" ; '
             + " ".join(shlex.quote(x) for x in c)
         )
 
@@ -1130,8 +1209,8 @@ def _ja_fatiado(stem: str) -> bool:
 # (etapa, texto quando pendente) por código do auditor.
 ORIENTACAO = {
     "gigante": "resolve-se na etapa 5 — Fatiar (o mestre não cabe na IA inteiro)",
-    "sem_ancoras": "resolve-se na etapa 3 — reconverter o PDF-fonte "
-                   "(injetar_paginas recria as âncoras)",
+    "sem_ancoras": "resolve-se na etapa 3 — reconverter o arquivo-fonte "
+                   "(injetar_paginas para PDF, converter_ebook para ePUB/MOBI)",
     "sem_frontmatter": "resolve-se na etapa 3 — reconverter (o arquivo "
                        "não tem YAML nenhum)",
 }
@@ -2276,10 +2355,18 @@ class Handler(BaseHTTPRequestHandler):
             if a in ("triagem", "ocr") and not fontes_expandidas():
                 fs = normalizar_fontes(CFG.get("fontes"))
                 return self._send(200, json.dumps({"ok": False, "msg": (
-                    "Nenhum PDF nas fontes selecionadas — confira a lista no "
+                    "Nenhuma fonte (PDF/ePUB/MOBI) na seleção — confira a lista no "
                     "card 01." if fs else
-                    "Nenhum PDF na pasta de trabalho. Adicione fontes no "
-                    "card 01 ou aponte a pasta onde estão os PDFs.")}))
+                    "Nenhuma fonte na pasta de trabalho. Adicione fontes no "
+                    "card 01 ou aponte a pasta onde estão os arquivos.")}))
+            # OCR é operação de PDF: uma seleção só de e-books não tem o que
+            # ocerizar, e mandá-la ao aplicar_ocr.sh geraria linhas "FALHOU"
+            # eternas no controle.csv. A triagem, sim, aceita só e-book.
+            if a == "ocr" and not [f for f in fontes_expandidas()
+                                   if not comum.eh_ebook(f)]:
+                return self._send(200, json.dumps({"ok": False, "msg": (
+                    "A seleção só tem e-books (ePUB/MOBI/AZW), que já são texto "
+                    "— não há o que ocerizar. Pule para a etapa 3 (Converter).")}))
             if a == "triagem":
                 ok, msg = acao_triagem(dry=True)
             elif a == "ocr":
@@ -2649,7 +2736,7 @@ tr:hover td{background:var(--surf2)}
   <div><h1>⚖ Acervo<small>Pipeline do segundo cérebro · WSL2</small></h1></div>
   <div class="sp"></div>
   <span class="badge" id="bJob">ocioso</span>
-  <span class="badge" id="bPdf">— PDFs</span>
+  <span class="badge" id="bPdf">— arquivos</span>
 </div></header>
 
 <div class="wrap">
@@ -2681,7 +2768,7 @@ tr:hover td{background:var(--surf2)}
         <button class="bnav" id="btnFontesLimpar" onclick="limparFontes()">Limpar tudo</button>
       </div>
       <div class="alerta" id="fontesColisao" hidden></div>
-      <div class="dica">Os PDFs podem estar espalhados: escolha <b>pastas inteiras</b> e <b>arquivos avulsos</b> de lugares diferentes. Nada é movido — as saídas vão todas para a pasta de trabalho. <b>Lista vazia</b> = processa a pasta de trabalho inteira.</div>
+      <div class="dica">As fontes (PDF, ePUB, MOBI, AZW3) podem estar espalhadas: escolha <b>pastas inteiras</b> e <b>arquivos avulsos</b> de lugares diferentes. Nada é movido — as saídas vão todas para a pasta de trabalho. <b>Lista vazia</b> = processa a pasta de trabalho inteira.</div>
     </div>
 
     <div class="grid3">
@@ -2769,7 +2856,7 @@ tr:hover td{background:var(--surf2)}
       <div class="conteudo">
         <div class="topo">
           <h3>Paginação</h3><button class="iet" onclick="abrirInfo('e3')" title="O que faz esta etapa?">i</button>
-          <span class="desc">PDF → Markdown com âncoras <code>{{p.NN}}</code>. Converte todos os PDFs pesquisáveis do <code>controle.csv</code> — ou seja, as fontes da última triagem; escaneado sem OCR fica listado como pulado.</span>
+          <span class="desc">PDF e ePUB/MOBI → Markdown com âncoras de citação. PDF e ePUB com <code>page-list</code> viram <code>{{p.NN}}</code> (página real); e-book sem paginação da edição impressa vira <code>{{loc.NN}}</code> (posição). Converte tudo o que o <code>controle.csv</code> marcou como pronto; escaneado sem OCR fica listado como pulado.</span>
           <span class="st" id="s3">—</span>
           <div class="acoes">
             <button data-a class="primary" onclick="acao('paginar',{offset:+offset.value,romanas:+romanas.value,reconverter:reconv.checked})">Converter tudo</button>
@@ -2954,7 +3041,7 @@ tr:hover td{background:var(--surf2)}
   <div class="head"><span class="n">04</span><h2>Triagem</h2>
     <p>o tipo é um palpite automático — <b>revise</b></p></div>
   <div class="tw"><table>
-    <thead><tr><th>Arquivo</th><th>Idioma</th><th>Pgs</th><th>Texto?</th><th>OCR</th>
+    <thead><tr><th>Arquivo</th><th>Fmt</th><th>Idioma</th><th>Pgs</th><th>Texto?</th><th>OCR</th>
       <th>Tipo (palpite)</th><th>Âncora?</th><th>Rota</th></tr></thead>
     <tbody id="tb"><tr><td colspan="8" style="color:var(--muted);padding:14px">Rode a triagem para popular.</td></tr></tbody>
   </table></div>
@@ -3212,7 +3299,7 @@ async function navIr(caminho){
   const d = await (await fetch('/api/navegar?path=' + encodeURIComponent(caminho||'') +
                                '&modo=' + navModo)).json();
   navAtual = d.path;
-  navPath.textContent = d.path + (d.n_pdfs_aqui ? `   (${d.n_pdfs_aqui} PDFs)` : '');
+  navPath.textContent = d.path + (d.n_fontes_aqui ? `   (${d.n_fontes_aqui} arquivos)` : '');
   navBc.innerHTML = (d.breadcrumb||[]).map((b,i,a)=>
     `<a onclick="navIr(${q(b.path)})">${esc(b.nome)}</a>` + (i<a.length-1?'<span>/</span>':'')).join('');
   let html = '';
@@ -3227,7 +3314,7 @@ async function navIr(caminho){
     return `<div class="it${on?' sel':''}" data-d="${esc(f.path)}" title="${esc(f.path)}"
                  onclick="navIr(${q(f.path)})">
        ${cb}<span class="ic">📁</span><span class="nm">${esc(f.nome)}</span>
-       ${f.pdfs?`<span class="ct">${f.pdfs} PDF</span>`:''}</div>`;
+       ${f.fontes?`<span class="ct">${f.fontes} arq.</span>`:''}</div>`;
   }).join('');
   html += (d.arquivos||[]).map(f=>{
     const on = navSel.has(f.path);
@@ -3305,7 +3392,7 @@ function renderFontes(){
   const info_de = {};
   (FONTES_EST.itens||[]).forEach(i=>{ info_de[i.path] = i; });
 
-  // colisão de nomes: dois PDFs que virariam o MESMO markdown
+  // colisão de nomes: dois arquivos que virariam o MESMO markdown
   const col = FONTES_EST.colisoes || [];
   fontesColisao.hidden = !col.length;
   if(col.length){
@@ -3336,9 +3423,9 @@ function renderFontes(){
     const sumiu = info.existe === false;
     const conta = sumiu ? 'não encontrada'
                 : (info.n === undefined ? '…'
-                   : info.n + (info.n===1 ? ' PDF' : ' PDFs'));
+                   : info.n + (info.n===1 ? ' arquivo' : ' arquivos'));
     const sub = f.tipo === 'dir'
-      ? `<label class="sub" title="incluir os PDFs das subpastas">
+      ? `<label class="sub" title="incluir os arquivos das subpastas">
            <input type="checkbox" ${f.rec?'checked':''} onchange="recFonte(${i},this.checked)"> subpastas
          </label>` : '';
     return `<div class="fo${sumiu?' sumiu':''}">
@@ -3446,17 +3533,17 @@ radBg.addEventListener('click', e => { if(e.target === radBg) fecharRadarIA(); }
 /* ---------- modal "o que faz esta etapa" ---------- */
 const INFO = {
  e1:{t:'1 · Triagem — o raio-X, sem alterar nada',
-  o:'Roda o <code>aplicar_ocr.sh</code> em <b>modo simulação</b>: examina cada PDF página a página (tem camada de texto? é digitalizado?), detecta o idioma e infere o tipo provável pelo nome e pelo conteúdo. Nenhum arquivo é alterado.',
+  o:'Roda o <code>aplicar_ocr.sh</code> em <b>modo simulação</b>: examina cada PDF página a página (tem camada de texto? é digitalizado?), detecta o idioma e infere o tipo provável pelo nome e pelo conteúdo. E-books (ePUB/MOBI/AZW) não passam pelo OCR — são listados à parte, já prontos para a etapa 3. Nenhum arquivo é alterado.',
   a:[['Analisar','executa <code>aplicar_ocr.sh</code> (dry-run) sobre as <b>fontes</b> escolhidas no card 01 — pastas inteiras e arquivos avulsos, de lugares diferentes — e grava a planilha <code>controle.csv</code>, que preenche a tabela da seção 04 e guia as etapas seguintes. Sem fontes escolhidas, varre a pasta de trabalho inteira.']],
-  s:'<code>controle.csv</code> na pasta de trabalho, com uma linha por PDF e o caminho de origem de cada um. Revise a tabela da seção 04 — ela é o seu checkpoint.'},
+  s:'<code>controle.csv</code> na pasta de trabalho, com uma linha por fonte (coluna <i>Fmt</i>: pdf/epub/mobi…) e o caminho de origem de cada uma. E-book entra na <b>rota A</b>, já marcado como pronto — não precisa de OCR. Revise a tabela da seção 04 — ela é o seu checkpoint.'},
  e2:{t:'2 · OCR — torna os digitalizados pesquisáveis',
-  o:'Aplica reconhecimento de texto (<code>ocrmypdf</code>) <b>só nos PDFs que precisam</b>, no idioma detectado na triagem. O original é preservado: nasce uma cópia <code>nome_OCR.pdf</code>. PDFs que já têm texto são pulados. Durante o processamento, este card mostra o arquivo atual e a barra de progresso; o log completo corre na seção 02.',
+  o:'Aplica reconhecimento de texto (<code>ocrmypdf</code>) <b>só nos PDFs que precisam</b> (e-book já é texto: nunca passa por aqui), no idioma detectado na triagem. O original é preservado: nasce uma cópia <code>nome_OCR.pdf</code>. PDFs que já têm texto são pulados. Durante o processamento, este card mostra o arquivo atual e a barra de progresso; o log completo corre na seção 02.',
   a:[['Aplicar OCR','executa <code>aplicar_ocr.sh</code> (sem dry-run, modo manter). Livro digitalizado grande pode levar mais de uma hora — acompanhe pelo sinal de vida.']],
   s:'Cópias <code>_OCR.pdf</code> ao lado dos originais e a coluna <i>ocr_status</i> do <code>controle.csv</code> atualizada.'},
  e3:{t:'3 · Paginação — o markdown nasce aqui, com âncoras',
-  o:'Converte PDF pesquisável em Markdown guardando o número de cada página como âncora <code>{{p.NN}}</code> — sem ela não há citação ABNT de livro. A âncora não atrapalha os tipos que não a exigem (lei, acórdão). Digitalizado ainda sem OCR não é convertível: aparece no log como <b>PULADO</b>, com a instrução de voltar à etapa 2.',
-  a:[['Converter tudo','roda <code>injetar_paginas.py</code> (no venv) para cada PDF pesquisável do <code>controle.csv</code> — as fontes da última triagem —, preferindo a cópia <code>_OCR</code>; o log lista os aptos e os pulados. Dois PDFs de pastas diferentes com o mesmo nome disputariam o mesmo markdown: o segundo é <b>pulado</b>, com o caminho do primeiro no log.'],
-     ['📄 / Converter seleção','o mesmo, só nos arquivos que você escolher (pode misturar pastas); valida as âncoras ao final. Aceita ePUB/MOBI via Calibre (sem paginação fixa — aviso no log).'],
+  o:'Converte PDF pesquisável e e-book em Markdown guardando o localizador de cada trecho como âncora — sem ela não há citação ABNT de livro. A âncora não atrapalha os tipos que não a exigem (lei, acórdão). Digitalizado ainda sem OCR não é convertível: aparece no log como <b>PULADO</b>, com a instrução de voltar à etapa 2.<br><br>ePUB tem paginação REAL quando o editor inclui o <code>page-list</code> (EPUB3) — nesse caso as âncoras são a página impressa e a citação ABNT sai normal. Sem <code>page-list</code>, a citação sai por POSIÇÃO (<code>local. N</code>), numa escala deste acervo — não é a location do Kindle. MOBI/AZW quase nunca trazem paginação (o mapa do Kindle fica num sidecar <code>.apnx</code> que não sobrevive à conversão). O log diz, arquivo por arquivo, qual rota foi usada.',
+  a:[['Converter tudo','roda <code>injetar_paginas.py</code> (no venv) para cada PDF pesquisável do <code>controle.csv</code> e <code>converter_ebook.py</code> para cada e-book (rota A) — as fontes da última triagem —, preferindo a cópia <code>_OCR</code>; o log lista os aptos e os pulados. Dois arquivos de pastas diferentes com o mesmo nome disputariam o mesmo markdown: o segundo é <b>pulado</b>. Quando a disputa é entre a MESMA obra em PDF e em ePUB, o <b>PDF vence</b> — ele tem a paginação da edição impressa.'],
+     ['📄 / Converter seleção','o mesmo, só nos arquivos que você escolher (pode misturar pastas); valida as âncoras ao final. Aceita ePUB/MOBI/AZW3/AZW.'],
      ['offset / romanas','ajustes de paginação impressa: se a página "1" do livro é a 13ª folha do PDF, offset 12; "romanas até" = nº de folhas do prefácio em algarismos romanos.']],
   s:'Um <code>.md</code> por PDF em <code>2-MARKDOWN-BRUTO/</code>, com a ficha YAML pré-preenchida (tipo provável e idioma da triagem).'},
  e4:{t:'4 · Limpar OCR — conserto mecânico, sem IA',
@@ -4121,7 +4208,7 @@ async function estado(){
   if(s.cfg.lang && lang.value !== s.cfg.lang) lang.value = s.cfg.lang;
   rootWsl.textContent = s.cfg.root || '';
   rootWsl.title = s.cfg.root || '';
-  bPdf.textContent = s.n_pdfs + ' PDFs';
+  bPdf.textContent = s.n_fontes + ' arquivos';
   CFG_ROOT = s.cfg.root || '';
 
   // fontes: o servidor é a fonte da verdade (a seleção sobrevive ao F5)
@@ -4176,8 +4263,11 @@ async function estado(){
     tb.innerHTML = s.csv.map(r=>{
       const anc = (r.exige_ancora_pagina||'').toUpperCase()==='SIM';
       const ocr = (r.precisou_ocr||'')==='sim';
+      // CSV antigo (16 colunas) nao tem `formato`: ausencia = pdf.
+      const fmt = (r.formato||'pdf').toLowerCase();
       return `<tr>
         <td title="${esc(r.caminho||'')}">${esc(r.arquivo||'')}</td>
+        <td><span class="pill ${fmt==='pdf'?'':'sim'}">${esc(fmt)}</span></td>
         <td><span class="pill">${esc(r.idioma||'?')}</span></td>
         <td>${esc(r.paginas||'')}</td>
         <td><span class="pill ${r.tem_camada_texto==='sim'?'ok':'no'}">${esc(r.tem_camada_texto||'')}</span></td>
@@ -4188,9 +4278,11 @@ async function estado(){
     }).join('');
     const nOcr = s.csv.filter(r=>r.precisou_ocr==='sim').length;
     const nAnc = s.csv.filter(r=>(r.exige_ancora_pagina||'').toUpperCase()==='SIM').length;
+    const nEb  = s.csv.filter(r=>(r.rota||'')==='A').length;
     stat.innerHTML = `<span><b>${s.csv.length}</b> arquivos</span>
       <span><b>${nOcr}</b> precisam de OCR</span>
-      <span><b>${nAnc}</b> exigem âncora de página</span>`;
+      <span><b>${nAnc}</b> exigem âncora de página</span>
+      ${nEb?`<span><b>${nEb}</b> e-book(s) — rota A</span>`:''}`;
 
     // card OCR concluído: diz O QUE aconteceu, não só "nada pendente"
     if(document.getElementById('e2').className.includes('feito')){

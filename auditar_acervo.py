@@ -90,7 +90,10 @@ CODS_FICHA = frozenset({"tipo_fonte", "campos_abnt", "referencia_abnt"})
 # Integridade da SEQUÊNCIA de âncoras — absorvido de verificar_ancoras.py
 # quando a etapa Qualidade foi unificada (v3.16). Sempre AVISO: a presença
 # de âncora continua sendo o erro; a sequência é diagnóstico fino.
-_ANC_ROT = re.compile(r"\{\{p\.([0-9ivxlcdm]+)\}\}", re.IGNORECASE)
+# Página E posição: sendo só `p.`, todo documento de e-book sem paginação saía
+# pelo `if not achados: return` abaixo e NÃO recebia checagem de duplicata,
+# ordem nem lacuna — ficava sem diagnóstico nenhum.
+_ANC_ROT = re.compile(r"\{\{(?:p|loc)\.([0-9ivxlcdm]+)\}\}", re.IGNORECASE)
 
 
 def _avisos_integridade_ancoras(r, corpo):
@@ -112,7 +115,7 @@ def _avisos_integridade_ancoras(r, corpo):
         if faltando:
             r["avisos"].append(f"lacunas na sequência de âncoras "
                                f"({faltando} pág. — pode ser normal: em branco/ilustração)")
-    if re.search(r"```[^`]*\{\{p\.", corpo, re.DOTALL):
+    if re.search(r"```[^`]*\{\{(?:p|loc)\.", corpo, re.DOTALL):
         r["avisos"].append("âncora dentro de bloco de código — verifique")
 
 
@@ -179,9 +182,11 @@ def auditar(caminho: Path):
         elif n == 0:
             _erro(r, "sem_ancoras",
                   "SEM âncoras de localização — NÃO É CITÁVEL em peça "
-                  "(reinjete com injetar_paginas.py sobre o PDF-fonte)")
+                  "(PDF: injetar_paginas.py; ePUB/MOBI: converter_ebook.py)")
         else:
-            r["ok"].append(f"{n} âncoras de página")
+            _nome = ("posição" if fm.get("localizador_tipo") == "posicao"
+                     else "página")
+            r["ok"].append(f"{n} âncoras de {_nome}")
             _avisos_integridade_ancoras(r, corpo)
     elif tf:
         r["ancoras"] = "n/a"
@@ -192,8 +197,12 @@ def auditar(caminho: Path):
     # 5–7. Metadados ABNT: exigidos na NOTA-ÍNDICE; as fatias herdam dela.
     if eh_fatia:
         r["ok"].append("fatia — metadados ABNT herdados da nota-índice")
-        if vazio(fm.get("pagina_inicio")) and tf in EXIGE_ANCORA:
-            r["avisos"].append("sem pagina_inicio/pagina_fim no YAML da fatia")
+        # Fatia de documento de posição grava `posicao_inicio/fim` (fatiar.py):
+        # cobrar `pagina_inicio` dela era cobrar um campo que não deve existir.
+        _pos = fm.get("localizador_tipo") == "posicao"
+        _par = "posicao" if _pos else "pagina"
+        if vazio(fm.get(f"{_par}_inicio")) and tf in EXIGE_ANCORA:
+            r["avisos"].append(f"sem {_par}_inicio/{_par}_fim no YAML da fatia")
     else:
         if tf:
             # O que BLOQUEIA (erro) vem de campos_bloqueantes; a dívida de

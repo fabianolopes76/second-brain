@@ -28,9 +28,11 @@ Uso (pelo aplicar_ocr.sh e pelo app; também funciona à mão):
 
 import csv
 import io
+import os
 import re
 import sys
 
+import comum
 import taxonomia
 
 
@@ -96,12 +98,30 @@ def exige_ancora_rotulo(tipo: str) -> str:
     return "SIM" if taxonomia.exige_ancora(tipo) else "nao"
 
 
-def rota(tem_texto: str) -> str:
-    """Rota do WORKFLOW para PDFs: B = nativo com texto; C = precisa OCR."""
+def formato_de(nome: str) -> str:
+    """Extensão sem o ponto ('pdf', 'epub', 'mobi'…), em minúsculas.
+
+    É a coluna que faltava: sem ela o `controle.csv` não sabia dizer de que
+    FORMATO era cada fonte, e a etapa 3 tinha de reinferir pela extensão do
+    caminho. CSV antigo (16 colunas) não tem esta coluna — quem lê deve tratar
+    ausência como "pdf", que era o único formato possível antes."""
+    return os.path.splitext(nome or "")[1].lower().lstrip(".") or "pdf"
+
+
+def rota(tem_texto: str, formato: str = "pdf") -> str:
+    """Rota do WORKFLOW: A = e-book (Calibre/pandoc, sem OCR);
+    B = PDF nativo com texto; C = PDF que precisa de OCR.
+
+    A rota A era citada num comentário do acervo_app.py e nunca existiu aqui —
+    e-book não tem camada de texto a inspecionar: ele JÁ é texto."""
+    if formato in comum.EXTENSOES_EBOOK_SEM_PONTO:
+        return "A"
     return "C" if str(tem_texto).lower() in ("nao", "não", "no", "0") else "B"
 
 
-def proximo_passo(anc: str) -> str:
+def proximo_passo(anc: str, formato: str = "pdf") -> str:
+    if formato in comum.EXTENSOES_EBOOK_SEM_PONTO:
+        return "converter_ebook.py"
     if anc == "SIM":
         return "injetar_paginas.py"
     if anc == "?":
@@ -111,21 +131,51 @@ def proximo_passo(anc: str) -> str:
 
 CABECALHO = ("arquivo,caminho,idioma,paginas,pgs_sem_texto,tem_camada_texto,"
              "precisou_ocr,ocr_status,arquivo_ocr,tipo_fonte_provavel,"
-             "exige_ancora_pagina,rota,proximo_passo,area,status,confiabilidade")
+             "exige_ancora_pagina,rota,proximo_passo,area,status,confiabilidade,"
+             "formato")
 
 
 def linha_csv(arq, caminho, pgs, vazias, tem_txt, precisou, status, saida,
               idioma="", amostra=""):
     tipo, conf, _ = inferir_tipo(arq, amostra)
     anc = exige_ancora_rotulo(tipo)
+    fmt = formato_de(arq)
     campos = [arq, caminho, idioma, pgs, vazias, tem_txt, precisou, status,
-              saida, tipo, anc, rota(tem_txt), proximo_passo(anc),
+              saida, tipo, anc, rota(tem_txt, fmt), proximo_passo(anc, fmt),
               "", "A-conferir",
               # confiabilidade do PALPITE de triagem — revisão humana decide
-              f"A-conferir (palpite: {conf})" if tipo else "A-conferir (indeterminado)"]
+              f"A-conferir (palpite: {conf})" if tipo else "A-conferir (indeterminado)",
+              fmt]
     buf = io.StringIO()
     csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator="").writerow(campos)
     return buf.getvalue()
+
+
+def linha_ebook(caminho: str) -> str:
+    """A linha do controle.csv de UM e-book. → texto CSV (com \\n)
+
+    E-book não passa pelo aplicar_ocr.sh — aquele script é PDF por dentro
+    (pdfinfo/pdftotext/pdfimages) e um ePUB na fila dele viraria `ocrmypdf`
+    rc=2 e uma linha "FALHOU" eterna. Então a linha nasce aqui, já com:
+      tem_camada_texto=sim, precisou_ocr=nao, ocr_status=nao_necessario
+    — que é a verdade (e-book JÁ é texto) e é o que faz o arquivo passar no
+    gate `pesquisavel` da etapa 3 sem afrouxar aquele gate para PDF.
+
+    A AMOSTRA para classificar o tipo vem do título/autoria do próprio OPF —
+    grátis (uma leitura de ZIP) e mais diagnóstica que o nome do arquivo, que
+    em acervo baixado costuma vir com ruído de origem."""
+    p = os.path.basename(caminho)
+    dados = {"titulo": "", "autoria": "", "idioma": "", "paginas": ""}
+    try:
+        import converter_ebook
+        from pathlib import Path as _P
+        dados = converter_ebook.sondar(_P(caminho))
+    except Exception:
+        pass                       # sondagem é bônus; a linha sai de todo jeito
+    amostra = " ".join(x for x in (dados.get("titulo"), dados.get("autoria")) if x)
+    return linha_csv(p, caminho, dados.get("paginas", ""), "", "sim", "nao",
+                     "nao_necessario", caminho, dados.get("idioma", ""),
+                     amostra) + "\n"
 
 
 def main():
@@ -142,10 +192,30 @@ def main():
     g.add_argument("--linha", nargs="+", metavar="CAMPO",
                    help="emite uma linha do CSV: ARQ CAMINHO PGS VAZIAS "
                         "TEM_TXT PRECISOU STATUS SAIDA [IDIOMA]")
+    g.add_argument("--ebooks", metavar="LISTA",
+                   help="lista NUL-separada de e-books; emite uma linha do CSV "
+                        "para cada (usar com >> controle.csv)")
+    ap.add_argument("--com-cabecalho", action="store_true",
+                    help="com --ebooks: emite o cabeçalho antes (use quando o "
+                         "aplicar_ocr.sh NÃO rodou e ninguém criou o CSV)")
     a = ap.parse_args()
 
     if a.cabecalho:
         print(CABECALHO)
+        return 0
+    if a.ebooks:
+        try:
+            bruto = open(a.ebooks, "rb").read().decode("utf-8", "replace")
+        except OSError as e:
+            print(f"ERRO: nao li a lista {a.ebooks}: {e}", file=sys.stderr)
+            return 1
+        caminhos = [c for c in bruto.split("\0") if c.strip()]
+        if a.com_cabecalho:
+            print(CABECALHO)
+        for c in caminhos:
+            sys.stdout.write(linha_ebook(c))
+        print(f"{len(caminhos)} e-book(s) na planilha de triagem (rota A).",
+              file=sys.stderr)
         return 0
     amostra = "" if sys.stdin.isatty() else sys.stdin.read()
     if a.inferir:

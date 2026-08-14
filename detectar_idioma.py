@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-detectar_idioma.py — Identifica o idioma de um PDF (ou texto) do acervo.
+detectar_idioma.py — Identifica o idioma de um PDF, e-book ou texto do acervo.
 
 Por que existe
 --------------
@@ -24,7 +24,8 @@ Uso:
     python3 detectar_idioma.py pasta/ --csv       # varre e imprime CSV
     python3 detectar_idioma.py texto.txt
 
-Requer 'pdftotext' (poppler-utils) para ler PDFs.
+Requer 'pdftotext' (poppler-utils) para PDF e 'ebook-convert' (calibre)
+para ePUB/MOBI/AZW.
 """
 
 import argparse
@@ -32,10 +33,13 @@ import collections
 import csv
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
+import comum
 import taxonomia
 
 # Palavras funcionais por idioma. Bastam para textos com 30+ palavras.
@@ -181,9 +185,33 @@ def detectar(texto: str):
     return (melhor if conf >= LIMIAR else ""), conf, placar
 
 
+def texto_do_ebook(caminho: Path) -> str:
+    """Amostra de texto de um e-book, via ebook-convert → txt.
+
+    Sem isto, o ramo `read_text` abaixo decodificava o ZIP e devolvia lixo
+    binário — e a detecção "funcionava" em silêncio, cuspindo um idioma
+    aleatório. Um e-book, ao contrário do PDF escaneado, dá a amostra IDEAL: o
+    miolo inteiro, limpo, sem OCR."""
+    if not shutil.which("ebook-convert"):
+        return ""
+    with tempfile.TemporaryDirectory(prefix="acervo-lang-") as td:
+        alvo = Path(td) / "amostra.txt"
+        try:
+            subprocess.run(["ebook-convert", str(caminho), str(alvo)],
+                           capture_output=True, timeout=300)
+            return alvo.read_text(encoding="utf-8", errors="replace")[:200_000]
+        except (subprocess.SubprocessError, OSError):
+            return ""
+
+
 def analisar(caminho: Path):
-    texto = texto_do_pdf(caminho) if caminho.suffix.lower() == ".pdf" \
-        else caminho.read_text(encoding="utf-8", errors="replace")
+    ext = caminho.suffix.lower()
+    if ext == ".pdf":
+        texto = texto_do_pdf(caminho)
+    elif ext in comum.EXTENSOES_EBOOK:
+        texto = texto_do_ebook(caminho)
+    else:
+        texto = caminho.read_text(encoding="utf-8", errors="replace")
     lg, conf, placar = detectar(texto)
     ordenado = sorted(placar.items(), key=lambda x: -x[1])
     segundo = ordenado[1][1] if len(ordenado) > 1 else 0.0
@@ -215,7 +243,9 @@ def main():
     if not alvo.exists():
         sys.exit(f"ERRO: não encontrei {alvo}")
 
-    arquivos = sorted(alvo.rglob("*.pdf")) if alvo.is_dir() else [alvo]
+    arquivos = (sorted(f for f in alvo.rglob("*")
+                       if f.suffix.lower() in comum.EXTENSOES_FONTE)
+                if alvo.is_dir() else [alvo])
     res = [analisar(f) for f in arquivos]
 
     if a.codigo:

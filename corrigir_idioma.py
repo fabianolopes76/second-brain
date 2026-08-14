@@ -31,6 +31,8 @@ import sys
 import unicodedata
 from pathlib import Path
 
+import comum
+
 import taxonomia
 
 NOMES = taxonomia.IDIOMAS          # fonte única do vocabulário de idiomas
@@ -75,7 +77,10 @@ def chave(nome: str) -> str:
 def achar_pdf(md: Path, pastas):
     """Localiza o PDF-fonte por comparação normalizada (NFC/NFD, caixa, símbolos)."""
     txt = md.read_text(encoding="utf-8", errors="replace")
-    m = re.search(r'^origem_pdf:\s*"?([^"\n]+)"?', txt, re.M)
+    # `origem_arquivo` é a chave genérica (PDF e e-book); `origem_pdf` é a
+    # histórica, mantida para não invalidar os markdown já gerados.
+    m = (re.search(r'^origem_arquivo:\s*"?([^"\n]+)"?', txt, re.M)
+         or re.search(r'^origem_pdf:\s*"?([^"\n]+)"?', txt, re.M))
 
     alvos = set()
     if m:
@@ -89,7 +94,7 @@ def achar_pdf(md: Path, pastas):
     for pasta in pastas:
         for raiz, _dirs, arqs in os.walk(pasta):
             for a in arqs:
-                if not a.lower().endswith(".pdf"):
+                if not comum.eh_fonte(a):
                     continue
                 if chave(Path(a).stem) in alvos:
                     candidatos.append(Path(raiz) / a)

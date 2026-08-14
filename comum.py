@@ -26,6 +26,31 @@ def vazio(v) -> bool:
 IGNORAR_PASTAS = frozenset({"99-Templates", "Radar", ".obsidian", ".trash"})
 
 
+# Extensões de ARQUIVO-FONTE aceitas na entrada do acervo. Duas famílias,
+# porque são duas rotas de conversão que não se misturam:
+#   PDF   → aplicar_ocr.sh (OCR quando precisa) → injetar_paginas.py → {{p.NN}}
+#   EBOOK → converter_ebook.py (sem OCR: já é texto) → {{p.NN}} ou {{loc.NN}}
+# Consumidores: acervo_app.py (navegador de pastas, contadores, expansão das
+# fontes, roteamento das etapas 1/2/3) e triagem.py (coluna `formato`).
+# O OCR só se aplica a PDF — e-book na lista do aplicar_ocr.sh vira ocrmypdf
+# rc=2 e uma linha "FALHOU" eterna no controle.csv.
+EXTENSOES_PDF = frozenset({".pdf"})
+EXTENSOES_EBOOK = frozenset({".epub", ".mobi", ".azw3", ".azw"})
+EXTENSOES_FONTE = EXTENSOES_PDF | EXTENSOES_EBOOK
+# Sem o ponto — é a forma que vai para a coluna `formato` do controle.csv.
+EXTENSOES_EBOOK_SEM_PONTO = frozenset(e.lstrip(".") for e in EXTENSOES_EBOOK)
+
+
+def eh_ebook(caminho) -> bool:
+    """O arquivo é e-book (não precisa de OCR, converte por converter_ebook.py)?"""
+    return str(caminho).lower().endswith(tuple(EXTENSOES_EBOOK))
+
+
+def eh_fonte(caminho) -> bool:
+    """O arquivo é fonte aceita pelo acervo (PDF ou e-book)?"""
+    return str(caminho).lower().endswith(tuple(EXTENSOES_FONTE))
+
+
 # [[alvo]] · [[alvo|alias]] · [[alvo#seção]] — o grupo 1 é só o alvo.
 WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
 

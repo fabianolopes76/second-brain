@@ -408,11 +408,21 @@ if [[ -n "$FILES_FROM" ]]; then
         exit 1
     fi
     while IFS= read -r -d '' f; do
-        if [[ -f "$f" ]]; then
-            files+=("$f")
-        else
+        if [[ ! -f "$f" ]]; then
             echo "AVISO: fonte sumiu do disco, ignorada: $f" >&2
+            continue
         fi
+        # ESTE SCRIPT E SO PARA PDF. Defesa em profundidade: o painel ja manda
+        # apenas PDFs, mas o script tambem e chamado a mao. Um ePUB aqui iria
+        # para analisar_pdf -> pdfinfo falha -> "PRECISA OCR" -> ocrmypdf rc=2
+        # -> linha "FALHOU" eterna no controle.csv, contada para sempre como
+        # OCR pendente. E-book nao precisa de OCR: ja e texto.
+        case "${f,,}" in
+            *.pdf) files+=("$f") ;;
+            *.epub|*.mobi|*.azw|*.azw3)
+                echo "IGNORADO (e-book nao precisa de OCR; use a etapa 3): $f" >&2 ;;
+            *)  echo "IGNORADO (nao e PDF): $f" >&2 ;;
+        esac
     done < "$FILES_FROM"
 else
     while IFS= read -r -d '' f; do

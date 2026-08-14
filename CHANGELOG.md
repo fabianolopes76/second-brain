@@ -5,6 +5,127 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.24.0] — 2026-08-14 · E-book de primeira classe — ePUB/MOBI viram Markdown citável
+
+O painel **aceitava** ePUB/MOBI desde sempre, mas a rota que os convertia era
+rasa: um `ebook-convert --txt-output-formatting=markdown` seguido de `mv`, e um
+`continue` que saía **antes** de tudo o que dá valor ao arquivo. O `.md` nascia
+órfão — sem frontmatter, sem `tipo_fonte`, sem idioma, sem âncora — e a cadeia
+inteira o rejeitava: o `verificar_ancoras.py` (rodado no mesmo job) acusava
+"NENHUMA âncora", o auditor REPROVAVA e o `publicar.py` bloqueava com "tipo
+'(vazio)' sem pasta de publicação". E o log culpava o **formato** por uma
+limitação que era **da rota**.
+
+Pior: a rota em lote nunca via e-book. O `aplicar_ocr.sh` varre
+`find -iname '*.pdf'` e o funil de seleção descartava não-PDF, então e-book não
+entrava no `controle.csv`, o "Converter tudo" o ignorava em silêncio, e escolher
+um ePUB como *fonte* mostrava "0 PDFs" e travava a etapa 1.
+
+### O contrato que já existia e nunca foi gerado
+
+A taxonomia **já previa** o lado e-book: `livro_ebook_leitor` com localizador
+`("posicao", "local.")`, o `ANCORA_POS` (`{{loc.NNNN}}`), o aviso redigido, a
+troca de padrão no `validar_yaml_abnt.py` e no `auditar_acervo.py`, e a proteção
+no `limpar_ocr.py`. Faltava **quem gerasse** a âncora — e duas peças a jusante
+que só conheciam `p.`. Esta versão fecha isso.
+
+### Adicionado
+
+- **`converter_ebook.py`** — o irmão do `injetar_paginas.py`. Stdlib only (roda
+  no `python3`, sem o venv do PyMuPDF). MOBI/AZW/AZW3 → ePUB pelo Calibre, ePUB →
+  Markdown pelo **pandoc com writer `gfm`**, e as âncoras resolvidas por
+  **hierarquia de evidência**, sempre partindo do índice de páginas do editor:
+  `epub3-page-list` → `ncx-page-list` → `pagebreak-scan` (inferência, sinalizada)
+  → `posicao`. Grava em `paginacao_origem` qual foi usada: quem cita precisa
+  saber se a página é do editor ou uma inferência nossa.
+- **Ficha ABNT pré-preenchida pelo próprio livro** (OPF/Dublin Core): `titulo`,
+  `editora` e — só quando o editor forneceu a inversão `file-as` — `autoria`,
+  todos marcados `# do EPUB (OPF) — CONFIRA`. ISBN, data e identificador entram
+  como **linha de comentário**, que o `frontmatter.ler` pula e o `fatiar.py`
+  copia verbatim para a nota-índice: a evidência viaja até onde o humano
+  preenche a ficha, sem máquina agir sobre ela. **`ano` fica em branco de
+  propósito** — `dc:date` costuma ser a data do arquivo, não da edição, e `ano` é
+  obrigatório para todo `livro*`, então a ficha continua pendente até alguém
+  conferir. É o laço humano funcionando.
+- **Três travas contra paginação enganosa**: rótulo (só `\d+` ou romano — um
+  `"A-3"` reprova o page-list inteiro), **cobertura** (menos de 90% do índice
+  casando com o texto → cai para posição, porque um doc com `{{p.1}}`…`{{p.50}}`
+  e nada depois *parece* paginado e mente a partir da metade) e **contagem**
+  (âncora prevista × gravada; divergiu, **não grava nada** — a mesma recusa do
+  `limpar_ocr.py` e do `fatiar.py`).
+- **Rota A no `controle.csv`**: coluna `formato` e `rota=A`, com
+  `proximo_passo=converter_ebook.py`. E-book entra já como pronto
+  (`ocr_status=nao_necessario`) — porque é a verdade: já é texto.
+- Coluna **Fmt** na tabela da seção 04 e contador de e-books.
+- `corpus/ebook/` — quatro fixtures geradas por `gerar_fixtures.py` (a versão
+  legível do fixture, já que ePUB é ZIP binário), uma por rota de âncora.
+- `diagnostico()` passa a checar **`pandoc`** e **`ebook-convert`**: sem eles a
+  etapa 3 falhava só nos e-books, e em silêncio.
+
+### Corrigido
+
+- **`limpar_ocr.py` partia parágrafo no meio.** O `re.sub(r"\n*(ANC)\n*", …)`
+  casava **zero** newlines: numa âncora **inline** — o caso do e-book com
+  page-list, em que a página impressa vira no meio do parágrafo — ele inseria
+  `\n\n` ao redor e cortava a frase do autor em duas. Pior, os fragmentos curtos
+  resultantes ficavam a ≤2 linhas de uma âncora e passavam a ser candidatos de
+  `detectar_cabecalhos` — que **apaga**. Agora só isola âncora que já está
+  sozinha na linha.
+- **`limpar_ocr.py` em modo e-book**: hifenização de fim de linha, cabeçalho de
+  digitalização e coluna partida são artefatos de *scanner*. Num e-book o texto
+  vem da marcação do editor: aplicar as heurísticas ali só produz falso
+  positivo, e falso positivo apaga texto do autor.
+- `verificar_ancoras.py` e `fatiar.py` só casavam `{{p.}}`. Consequência do
+  primeiro: **um e-book reprovava a validação de todo o lote** (o `rc=1` do
+  final, rodado sobre a pasta inteira pela etapa 3). Do segundo: documento de
+  posição sem ponto de corte e sem localizador nas fatias.
+- `auditar_acervo.py`: o `_ANC_ROT` só-`p.` fazia documento de posição sair pelo
+  `if not achados: return` e **não receber checagem nenhuma** de duplicata,
+  ordem ou lacuna.
+- `fatiar.py` grava `posicao_inicio`/`posicao_fim` (não `pagina_*`) e escreve
+  `local. 3–5` no callout e no sumário, via `localizador_abrev` — antes diria
+  "p. 3" onde é "local. 3", fazendo o leitor citar uma página que não existe.
+- `taxonomia.ANCORA_POS` não aceitava a forma comentário que `ANCORA_PAG`
+  aceita: `--ancora comentario` num e-book gerava `<!-- loc.37 -->` invisível ao
+  validador, que reprovava o arquivo tendo todas as âncoras no lugar. Mesma
+  assimetria corrigida no `limpar_ocr.py`.
+- `detectar_idioma.py` lia ePUB como **texto**, decodificando o ZIP e devolvendo
+  lixo binário — e a detecção "funcionava" em silêncio, cuspindo idioma
+  aleatório. Agora extrai via `ebook-convert`. E-book dá a amostra ideal: o miolo
+  inteiro, limpo, sem OCR — por isso o **detector é primário** e o `dc:language`
+  só desempata (metadado de e-book convertido costuma dizer `en` por default de
+  ferramenta).
+- `aplicar_ocr.sh` no modo `FILES_FROM` **não filtrava extensão** (só testava
+  `-f`). Um ePUB ali chegava ao `analisar_pdf` → `pdfinfo` falha → "PRECISA OCR"
+  → `ocrmypdf` rc=2 → linha `FALHOU:` **eterna** no CSV, contada para sempre
+  como OCR pendente. Agora há filtro nos dois lados (defesa em profundidade: o
+  script também é chamado à mão).
+- `.azw3` era **código morto**: tratado na conversão, mas ausente do filtro do
+  seletor — não havia como escolhê-lo. Agora a família e-book é uma constante
+  única em `comum.py` (`EXTENSOES_FONTE`), usada por todos os consumidores.
+- Contador de pasta somava **só `.pdf`**: uma pasta cheia de ePUBs aparecia como
+  "0". Os identificadores e as chaves JSON passaram de `pdfs` para `fontes` —
+  deixar "PDFs" nomeando pdf+ebook era a mentira silenciosa que os comentários
+  deste repo condenam.
+- Colisão de nome entre a **mesma obra em dois formatos** (`Curso.pdf` ×
+  `Curso.epub` disputando `Curso.md`): agora o **PDF vence**, explicitamente e
+  com mensagem instrutiva no log — ele tem a paginação da edição impressa.
+- OCR com seleção só de e-books deixa de tentar rodar: avisa e manda para a
+  etapa 3. E a triagem de só-e-books não roda o bash (que truncaria o
+  `controle.csv` com seu `> $CSV_FILE` para escrever "Encontrados 0 PDF(s)").
+- `injetar_paginas.py` passa a emitir `origem_arquivo` e `formato: pdf` além do
+  `origem_pdf` histórico; `corrigir_idioma.py` aceita as duas chaves.
+- Textos que afirmavam categoricamente "ePUB/MOBI não têm paginação fixa" agora
+  são nuançados — têm, quando o editor inclui o `page-list`.
+
+### Escopo declarado
+
+Imagens do e-book são **descartadas** nesta versão, com a contagem em
+`imagens_descartadas` e no log: o `publicar.py` só carrega `.md`, então extrair
+mídia deixaria link quebrado no vault — pior que uma omissão auditável. Carregar
+mídia até o vault fica para depois. DOCX/ODT/RTF/HTML e DJVU/FB2/CBZ ficam fora:
+o pedido foi a família e-book.
+
 ## [3.23.0] — 2026-08-12 · Fontes múltiplas — o acervo deixa de ser "uma pasta"
 
 O painel tinha **uma única entrada**: uma pasta, que era ao mesmo tempo a

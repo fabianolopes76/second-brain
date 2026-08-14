@@ -35,7 +35,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-ANCORA = re.compile(r"\{\{(?:p|loc)\.[0-9ivxlcdm]+\}\}", re.I)
+# As duas famílias (página/posição) nas DUAS formas (chaves/comentário). A forma
+# comentário nunca foi protegida aqui: `--ancora comentario` gerava <!-- p.45 -->
+# que a limpeza podia tratar como texto comum e a trava de contagem do fim
+# (n_antes × n_depois) então reprovava o arquivo inteiro.
+ANCORA = re.compile(r"\{\{(?:p|loc)\.[0-9ivxlcdm]+\}\}"
+                    r"|<!--\s*(?:p|loc)\.[0-9ivxlcdm]+\s*-->", re.I)
 
 # Linhas que são claramente cabeçalho/rodapé/lixo de OCR
 LIXO = [
@@ -97,6 +102,18 @@ def detectar_cabecalhos(linhas, min_rep=4):
     return cabecalhos
 
 
+def eh_de_ebook(fm: str) -> bool:
+    """O documento veio de e-book (converter_ebook.py) e não de OCR?
+
+    Importa porque este script é LIMPEZA DE OCR: hifenização de fim de linha,
+    cabeçalho/rodapé de digitalização e coluna partida são artefatos do
+    scanner. Num e-book o texto vem da marcação do editor — não há esses
+    artefatos, e aplicar as heurísticas ali só produz falso positivo. E falso
+    positivo em `detectar_cabecalhos` APAGA texto do autor."""
+    return bool(re.search(r"^(?:motor_conversao|paginacao_origem):", fm, re.M)
+                or re.search(r"^formato:\s*(epub|mobi|azw3?|azw)\s*$", fm, re.M))
+
+
 def limpar(texto):
     rel = Counter()
     texto, ancoras = proteger_ancoras(texto)
@@ -104,15 +121,19 @@ def limpar(texto):
     # separa frontmatter (não se mexe nele)
     m = re.match(r"^(---\s*\n.*?\n---\s*\n)", texto, re.DOTALL)
     fm, corpo = (m.group(1), texto[m.end():]) if m else ("", texto)
+    ebook = eh_de_ebook(fm)
+    if ebook:
+        rel["modo e-book (limpeza de OCR não se aplica)"] = 1
 
     # 1) hifenização de fim de linha: "respon-\nsabilidade" -> "responsabilidade"
     #    Cuidado: só quando a 2ª parte começa em minúscula (evita "jurídico-\nTributário")
-    corpo, n = re.subn(r"(\w)-\n(?=[a-záàâãéêíóôõúüçñäöüß])", r"\1", corpo)
-    rel["hifenizações unidas"] = n
+    if not ebook:
+        corpo, n = re.subn(r"(\w)-\n(?=[a-záàâãéêíóôõúüçñäöüß])", r"\1", corpo)
+        rel["hifenizações unidas"] = n
 
     # 2) remove cabeçalhos/rodapés repetidos e lixo
     linhas = corpo.split("\n")
-    repetidos = detectar_cabecalhos(linhas)
+    repetidos = set() if ebook else detectar_cabecalhos(linhas)
     saida, n_lixo, n_cab = [], 0, 0
     for l in linhas:
         s = l.strip()
@@ -136,17 +157,27 @@ def limpar(texto):
 
     # 4) junta linhas quebradas no meio da frase (coluna partida).
     #    Só quando a linha NÃO termina em pontuação e a próxima começa em minúscula.
-    corpo, n = re.subn(
-        r"(?<![.:;!?—\-])\n(?=[a-záàâãéêíóôõúüçñäöüß])(?![ \t]*[-*•])", " ", corpo)
-    rel["linhas religadas"] = n
+    if not ebook:
+        corpo, n = re.subn(
+            r"(?<![.:;!?—\-])\n(?=[a-záàâãéêíóôõúüçñäöüß])(?![ \t]*[-*•])",
+            " ", corpo)
+        rel["linhas religadas"] = n
 
     # 5) espaços e quebras
     corpo = re.sub(r"[ \t]{2,}", " ", corpo)
     corpo = re.sub(r"[ \t]+\n", "\n", corpo)
     corpo = re.sub(r"\n{4,}", "\n\n\n", corpo)
 
-    # 6) garante linha em branco ao redor das âncoras (legibilidade e parsing)
-    corpo = re.sub(r"\n*(\x00ANC\d+\x00)\n*", r"\n\n\1\n\n", corpo)
+    # 6) linha em branco ao redor das âncoras que JÁ ESTÃO SOZINHAS na linha.
+    #    O `\n*` de antes casava ZERO newlines: numa âncora INLINE — o caso do
+    #    e-book com page-list, em que a página impressa vira no meio do
+    #    parágrafo — ele inseria \n\n ao redor e PARTIA a frase do autor em
+    #    duas. Pior: os fragmentos curtos resultantes ficavam a ≤2 linhas de
+    #    uma âncora e passavam a ser candidatos de `detectar_cabecalhos`.
+    #    Âncora inline agora fica intacta. E NÃO se "empurra" a âncora para o
+    #    início do parágrafo: isso deslocaria a fronteira de página e faria
+    #    citar a p. 147 um trecho que está na 148.
+    corpo = re.sub(r"(?m)^[ \t]*(\x00ANC\d+\x00)[ \t]*$", r"\n\1\n", corpo)
     corpo = re.sub(r"\n{3,}", "\n\n", corpo)
 
     resultado = restaurar_ancoras(fm + corpo.strip() + "\n", ancoras)

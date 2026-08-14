@@ -152,7 +152,11 @@ def main():
 
     cabecalho = (
         "---\n"
+        # `origem_arquivo` é a chave genérica (a mesma que o converter_ebook.py
+        # grava); `origem_pdf` fica para não invalidar os markdown já gerados.
+        f'origem_arquivo: "{entrada.name}"\n'
         f'origem_pdf: "{entrada.name}"\n'
+        f'formato: pdf\n'
         f"paginas_total: {total}\n"
         f"offset_pagina: {args.offset}\n"
         f'ancora: "{args.ancora}"\n'

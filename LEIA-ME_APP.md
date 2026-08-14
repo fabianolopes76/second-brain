@@ -136,7 +136,7 @@ O botão **➕ Adicionar pastas/arquivos…**, no card 01, abre o navegador em *
 - Na linha de uma pasta, a **caixinha** a leva **inteira**; o **nome** continua entrando nela para procurar mais fundo. É a mesma linha, com dois gestos distintos.
 - Arquivos soltos (PDF/ePUB/MOBI) têm caixinha como sempre; **Marcar todos** abrange pastas e arquivos do nível.
 - A seleção **acumula entre pastas e discos diferentes** — navegue, marque mais, e só então **Adicionar selecionados**.
-- Cada pasta da lista tem seu **↳ subpastas** (ligado por padrão) e mostra **quantos PDFs traz**.
+- Cada pasta da lista tem seu **↳ subpastas** (ligado por padrão) e mostra **quantos arquivos traz** (PDF + e-book).
 - A lista fica salva no `~/.config/acervo/config.json`: sobrevive ao F5 e ao reinício do painel.
 - **Lista vazia** = varre a pasta de trabalho inteira, como o painel sempre fez.
 
@@ -171,7 +171,9 @@ Exemplo real, 4 obras em 4 idiomas numa tacada:
 === VALIDACAO ===  Resumo: 4/4 arquivo(s) com âncoras íntegras.
 ```
 
-> **ePUB/MOBI na fila:** são convertidos pelo Calibre, mas o app **avisa** que esses formatos não têm paginação fixa — não servem para citação ABNT com página. Para citar, use o PDF paginado.
+> **ePUB/MOBI/AZW na fila (e nas fontes):** entram no pipeline como cidadãos de primeira classe — ficha ABNT pré-preenchida pelos metadados do próprio livro e âncora de citação. O app decide e **avisa no log, arquivo por arquivo**: se o editor incluiu o índice de páginas (`page-list`), as âncoras são a **página impressa** e a citação ABNT sai normal; se não, a citação sai por **posição** (`local. N`), numa escala deste acervo — **não é a *location* do Kindle**. MOBI/AZW quase nunca trazem paginação (o mapa do Kindle fica num sidecar `.apnx` que não sobrevive à conversão). Para citar por página numa peça, prefira a edição paginada.
+>
+> E-book **nunca passa pelo OCR** (etapa 2): já é texto. Na triagem ele aparece na **rota A**, com a coluna *Fmt* mostrando o formato. Se a mesma obra existir em PDF **e** em ePUB com o mesmo nome, o **PDF vence** — ele tem a paginação da edição impressa.
 
 > **Fila (etapa 3) × fontes (card 01):** a **fila** converte na hora um punhado de arquivos já pesquisáveis, sem passar pela triagem — é transitória, some ao recarregar a página. As **fontes** definem o acervo que o pipeline inteiro processa (Triagem → OCR → …) e ficam salvas. Para uma remessa nova de escaneados, escolha-a como fonte e rode **Triagem → OCR**; para converter dois PDFs que já têm texto, a fila é o caminho curto.
 

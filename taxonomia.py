@@ -159,7 +159,10 @@ ESTRITO = os.environ.get("ACERVO_ESTRITO") == "1"
 
 # Âncoras de localização no markdown (páginas e posições de e-book).
 ANCORA_PAG = re.compile(r"\{\{p\.[0-9ivxlcdm]+\}\}|<!--\s*p\.[0-9ivxlcdm]+\s*-->", re.I)
-ANCORA_POS = re.compile(r"\{\{loc\.\d+\}\}", re.I)
+# A forma comentário existe nas DUAS: sem ela, `--ancora comentario` num e-book
+# gerava <!-- loc.37 --> que o validar_yaml_abnt.py:244 não via, e o arquivo era
+# reprovado por "SEM âncoras de posicao" tendo todas as âncoras no lugar.
+ANCORA_POS = re.compile(r"\{\{loc\.\d+\}\}|<!--\s*loc\.\d+\s*-->", re.I)
 
 # Idiomas do acervo (código Tesseract → nome) e forma da edição por língua
 # (NBR 6023: a edição segue a língua do documento).

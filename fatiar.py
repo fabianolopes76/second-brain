@@ -33,7 +33,10 @@ from pathlib import Path
 import comum
 import frontmatter
 
-ANCORA = re.compile(r"\{\{p\.([0-9ivxlcdm]+)\}\}", re.I)
+# Página (PDF, e-book com page-list) e posição (e-book sem paginação impressa).
+# Só `p.` aqui significava, para um documento de posição: zero ponto de corte,
+# zero localizador nas fatias, e a trava de conservação de âncoras contando 0.
+ANCORA = re.compile(r"\{\{(p|loc)\.([0-9ivxlcdm]+)\}\}", re.I)
 TITULO = re.compile(r"^(#{1,4})\s+(.+)$")
 
 ALVO_PALAVRAS = 1200      # ~1.500 tokens
@@ -124,10 +127,16 @@ def fatiar(corpo, alvo=ALVO_PALAVRAS, maxi=MAX_PALAVRAS):
 
 
 def paginas_da_fatia(fatia):
+    """→ (primeiro, último, tipo) — tipo é 'p' (página) ou 'loc' (posição).
+
+    O tipo tem de subir junto: é ele que decide se a fatia grava
+    `pagina_inicio` ou `posicao_inicio`, e se o sumário escreve "p. 3" ou
+    "local. 3". Escrever "p." num documento de posição faria o leitor citar uma
+    página que não existe."""
     achadas = ANCORA.findall(fatia)
     if not achadas:
-        return None, None
-    return achadas[0], achadas[-1]
+        return None, None, "p"
+    return achadas[0][1], achadas[-1][1], achadas[0][0].lower()
 
 
 def titulo_da_fatia(fatia, i):
@@ -172,7 +181,11 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
     itens = []
 
     for i, f in enumerate(fatias, 1):
-        p_ini, p_fim = paginas_da_fatia(f)
+        p_ini, p_fim, anc_tipo = paginas_da_fatia(f)
+        # A abreviatura vem da ficha (taxonomia decide: "p." ou "local."); o
+        # fallback segue o tipo de âncora achado no corpo.
+        loc_ab = (fm.get("localizador_abrev")
+                  or ("p." if anc_tipo == "p" else "local."))
         tit = titulo_da_fatia(f, i)
         n_anc_fat += len(ANCORA.findall(f))
         nome = f"{prefixo}_p{i:02d}.md"
@@ -188,10 +201,15 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
             if fm.get(campo):
                 cab.append(frontmatter.emitir(campo, fm[campo]))
         if p_ini:
-            cab += [f"pagina_inicio: {p_ini}", f"pagina_fim: {p_fim}"]
+            # Documento de posição grava `posicao_inicio/fim`. Reaproveitar
+            # `pagina_*` faria o leitor citar "p. 3" onde é "local. 3" — e em
+            # `capitulo_livro`/`artigo_periodico` (taxonomia.py:63,69) esse par
+            # já significa outra coisa: o intervalo do capítulo na obra.
+            chave = "pagina" if anc_tipo == "p" else "posicao"
+            cab += [f"{chave}_inicio: {p_ini}", f"{chave}_fim: {p_fim}"]
         cab.append("---")
 
-        pag_txt = f", **p. {p_ini}–{p_fim}**" if p_ini else ""
+        pag_txt = f", **{loc_ab} {p_ini}–{p_fim}**" if p_ini else ""
         entrada = (f"> **{fm.get('titulo', arq.stem)}** · {tit}{pag_txt} — fatia {i:02d}. "
                    f"Ficha: [[{prefixo}_INDICE]].\n\n---\n\n")
         nav = (f"\n\n---\n\n◀ [[{prefixo}_p{i-1:02d}]] · "
@@ -202,7 +220,7 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
 
         (destino / nome).write_text("\n".join(cab) + "\n\n" + entrada + f + nav,
                                     encoding="utf-8")
-        itens.append((i, tit, p_ini, p_fim, f"{prefixo}_p{i:02d}"))
+        itens.append((i, tit, p_ini, p_fim, f"{prefixo}_p{i:02d}", loc_ab))
 
     # TRAVA: nenhuma âncora pode se perder no fatiamento
     if n_anc_orig != n_anc_fat:
@@ -233,13 +251,14 @@ def processar(arq: Path, destino: Path, alvo: int, minimo: int):
     idx.append("## Resumo para consulta\n")
     idx.append("<!-- 3–8 linhas. É o que a IA lê primeiro para decidir se abre uma fatia. -->\n")
     idx.append(f"## Sumário — {len(fatias)} fatias\n")
-    for i, tit, pi, pf, link in itens:
-        pag = f" — p. {pi}–{pf}" if pi else ""
+    for i, tit, pi, pf, link, ab in itens:
+        pag = f" — {ab} {pi}–{pf}" if pi else ""
         idx.append(f"- [[{link} | {i:02d} — {tit}]]{pag}")
     idx.append("\n## Conferência")
     idx.append("- [ ] Metadados ABNT preenchidos")
     idx.append("- [ ] Resumo escrito")
-    idx.append("- [ ] 3 páginas conferidas contra o PDF")
+    _fonte = fm.get("origem_arquivo") or fm.get("origem_pdf") or "o arquivo-fonte"
+    idx.append(f"- [ ] 3 trechos conferidos contra {_fonte}")
     idx.append("- [ ] `confiabilidade: Conferida`")
 
     (destino / f"{prefixo}_INDICE.md").write_text("\n".join(idx), encoding="utf-8")

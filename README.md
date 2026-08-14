@@ -1,8 +1,8 @@
 # Acervo — segundo cérebro para bases de conhecimento
 
-**Versão 3.23.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
+**Versão 3.24.0** · [Changelog](CHANGELOG.md) · **[🖱️ Guia Visual — usar sem linha de comando](GUIA-VISUAL.md)**
 
-Pipeline completo que transforma documentos (PDF, ePUB) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de página para citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
+Pipeline completo que transforma documentos (**PDF, ePUB, MOBI, AZW3, AZW**) em uma **base de conhecimento navegável no Obsidian**, pronta para consulta por humanos e por IA — com metadados ABNT validados, âncoras de citação e mapas de conteúdo (MOCs) que se atualizam sozinhos.
 
 O primeiro perfil de uso é **jurídico** (doutrina, legislação, jurisprudência, com citação NBR 10520/6023), mas a arquitetura é **multi-domínio**: o núcleo do pipeline é neutro e cada área do conhecimento entra como um *perfil* — ver [Arquitetura](#arquitetura-núcleo--perfil).
 
@@ -29,7 +29,7 @@ O primeiro perfil de uso é **jurídico** (doutrina, legislação, jurisprudênc
 ```
 FASE 0  Preparar   → instalar ferramentas, criar pastas             (uma vez)
 FASE 1  Triar      → o que é cada arquivo? tipo + rota + idioma     (por lote)
-FASE 2  Converter  → PDF/ePUB → Markdown COM âncoras de página      (por lote)
+FASE 2  Converter  → PDF/e-book → Markdown COM âncoras de citação    (por lote)
 FASE 3  Refinar    → limpar OCR + YAML ABNT + fatiar                (por lote)
 FASE 4  Validar    → âncoras íntegras + YAML completo por tipo      (por lote)
 FASE 5  Publicar   → montar o vault do Obsidian (MOCs Dataview)     (por lote)
@@ -95,7 +95,7 @@ Duas camadas, **sem misturar** (a mistura `apt` × `pip --user` é a causa do in
 
 ```bash
 # 1) Ferramentas de SISTEMA (Ubuntu/WSL2)
-sudo apt install -y ocrmypdf ghostscript poppler-utils unpaper calibre
+sudo apt install -y ocrmypdf ghostscript poppler-utils unpaper calibre pandoc
 sudo apt install -y tesseract-ocr-por tesseract-ocr-eng tesseract-ocr-deu \
                     tesseract-ocr-fra tesseract-ocr-ita tesseract-ocr-spa
 
@@ -128,10 +128,10 @@ No painel: defina a **pasta de trabalho** (botão 📁 Procurar navega os discos
 
 | Etapa | O que faz | Script por trás |
 |---|---|---|
-| 1 · Triagem | Analisa cada PDF (dry-run): tipo provável, idioma, rota, precisa de OCR? | `aplicar_ocr.sh` + `triagem.py` |
-| 2 · OCR | OCR em lote só no que precisa, no idioma certo | `aplicar_ocr.sh` |
-| 3 · Paginação | PDF → Markdown com âncoras `{{p.NN}}` | `injetar_paginas.py` |
-| 4 · Limpar | Hifenização, cabeçalhos repetidos, ruído (sem IA) | `limpar_ocr.py` |
+| 1 · Triagem | Analisa cada fonte (dry-run): formato, tipo provável, idioma, rota, precisa de OCR? E-book entra na **rota A**, sem OCR | `aplicar_ocr.sh` + `triagem.py` |
+| 2 · OCR | OCR em lote só nos PDFs que precisam, no idioma certo (e-book nunca passa aqui: já é texto) | `aplicar_ocr.sh` |
+| 3 · Paginação | PDF → Markdown com âncoras `{{p.NN}}`; e-book → `{{p.NN}}` (se o editor registrou a paginação impressa) ou `{{loc.NN}}` (posição) | `injetar_paginas.py` · `converter_ebook.py` |
+| 4 · Limpar | Hifenização, cabeçalhos repetidos, ruído (sem IA). Pula sozinho no e-book, que não tem artefato de digitalização | `limpar_ocr.py` |
 | 5 · Fatiar | Livro grande → nota-índice + fatias | `fatiar.py` |
 | 6 · Validar | Âncoras + YAML ABNT por tipo | `verificar_ancoras.py` + `validar_yaml_abnt.py` |
 | 7 · Auditar | O resultado serve ao segundo cérebro? (PRONTO/PARCIAL/REPROVADO) | `auditar_acervo.py` |
@@ -165,8 +165,45 @@ A triagem classifica cada arquivo por **nome E conteúdo** (1ª/2ª página) e r
 - `tipo_fonte_provavel` — o palpite (`legislacao`, `livro`, `jurisprudencia`…). **Vazio = indeterminado**: nada pontuou; classifique à mão. O sistema *não chuta* — era assim que legislação virava "livro" em silêncio.
 - `confiabilidade` — inclui a confiança do palpite (`alta`/`media`) para você revisar primeiro o que é duvidoso.
 - `exige_ancora_pagina` — `SIM` (doutrina), `nao` (lei/julgado) ou `?` (indeterminado).
+- `formato` — `pdf`, `epub`, `mobi`, `azw3`, `azw`.
+- `rota` — **A** = e-book (sem OCR: já é texto) · **B** = PDF nativo com texto · **C** = PDF que precisa de OCR.
 
 **Sempre revise o CSV antes de seguir** — é o checkpoint humano da Fase 1.
+
+### E-book: quando dá para citar por página, e quando não
+
+"E-book tem paginação?" não é sim/não — depende de **quanto o editor registrou**. O
+`converter_ebook.py` procura a evidência mais forte disponível e grava em
+`paginacao_origem` qual usou, porque quem cita precisa saber se a página é do
+editor ou uma inferência nossa:
+
+| `paginacao_origem` | Evidência | Âncora | Citação |
+|---|---|---|---|
+| `epub3-page-list` | `<nav epub:type="page-list">` — o índice de páginas publicado pelo editor | `{{p.147}}` | `(AUTOR, 2023, p. 147)` — ABNT plena |
+| `ncx-page-list` | `<pageList>` no NCX (EPUB2) | `{{p.147}}` | idem |
+| `pagebreak-scan` | marcador `pagebreak` solto, sem índice — **inferência**, sinalizada na ficha | `{{p.147}}` | idem, mas confira contra a impressa |
+| `posicao` | nenhum marcador | `{{loc.37}}` | `(AUTOR, 2023, local. 37)` |
+
+Três travas impedem paginação enganosa: **rótulo** (só `\d+` ou romano), **cobertura**
+(menos de 90% do índice casando com o texto → cai para posição) e **contagem**
+(âncora prevista × âncora gravada; divergiu, não grava nada).
+
+> **A posição é deste acervo — não é a *location* do Kindle.** 1 `local.` = 1500
+> caracteres de texto (≈ uma página impressa), gravado em `posicao_passo` para a
+> numeração ser reproduzível. Reconverter com o mesmo passo dá as mesmas âncoras.
+
+**MOBI/AZW quase nunca terão paginação real**: o mapa de páginas do Kindle mora num
+sidecar `.apnx`, fora do arquivo, e não sobrevive à conversão. Para citar por página
+numa peça, prefira a edição paginada (PDF).
+
+**A ficha vem meio-pronta.** O e-book carrega seus metadados: `titulo`, `editora` e —
+quando o editor forneceu a inversão `file-as` — `autoria` entram marcados
+`# do EPUB (OPF) — CONFIRA`. O resto (ISBN, data, identificador) entra como **linha de
+comentário**, que nenhuma máquina consome e que viaja até a nota-índice onde você
+preenche a ficha. **`ano` fica em branco de propósito**: `dc:date` costuma ser a data
+em que o *arquivo* foi gerado, não o ano da edição — e `ano` é obrigatório para todo
+`livro*`, então a ficha continua pendente até alguém conferir. É o laço humano
+funcionando.
 
 ## Uso — pela linha de comando
 
@@ -183,6 +220,11 @@ python injetar_paginas.py livro_OCR.pdf -o 2-MARKDOWN-BRUTO/livro.md
 python injetar_paginas.py livro.pdf -o livro.md --offset 12 --romanas-ate 14
 python verificar_ancoras.py 2-MARKDOWN-BRUTO/
 deactivate
+
+# FASE 2 (rota A) · e-book → Markdown (stdlib: NÃO precisa do venv)
+python3 converter_ebook.py livro.epub -o 2-MARKDOWN-BRUTO/livro.md
+python3 converter_ebook.py livro.mobi -o livro.md --tipo-fonte livro
+python3 converter_ebook.py livro.epub -o livro.md --posicao-passo 1200
 
 # FASE 3 · limpeza mecânica + fatiamento (sem IA, sem venv)
 python3 limpar_ocr.py 2-MARKDOWN-BRUTO/ --inplace
