@@ -5,6 +5,77 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.25.0] — 2026-08-15 · Uma pasta por obra — o vault deixa de ser uma lista chapada
+
+O `publicar.py` despejava **todas** as notas de **todas** as obras direto na pasta
+da categoria. Com um acervo real isso não escala: um único livro fatiado gera
+dezenas de `_pNN.md`, e `01-Doutrina/Tributário/` virava uma lista de centenas de
+arquivos onde não dava para ver onde uma obra termina e a outra começa. O
+problema nunca foi do grafo (índice ⇄ fatias sempre funcionou) — era de
+**navegação humana**, na barra lateral do Obsidian.
+
+### Adicionado
+
+- **`taxonomia.pasta_da_obra(stem)`** — o nome **resumido** da obra, irmão de
+  `analisar_nome()` e derivado do mesmo `_NOME_RE`:
+  `TRIB_DOUT_2023_Curso-Direito-Tributario_Machado` → `Curso-Direito-Tributario_Machado`.
+  Área e tipo já são a pasta-mãe e o ano não ajuda a reconhecer a obra na barra
+  lateral, então só `Titulo_Autor` sobrevive. O sufixo `_INDICE`/`_pNN` é
+  ignorado **de propósito**: índice e fatias da mesma obra têm de cair na mesma
+  pasta, então os dois entram e saem com o mesmo nome. Nome fora do padrão cai
+  no stem inteiro sem sufixo — organizar o vault não pode depender de o nome
+  estar certo (quem cobra a convenção é o `auditar_vault`, com aviso).
+  O slug é o mesmo `comum.prefixo_fatia` que nomeia os arquivos: a pasta não
+  admite caractere que o arquivo dentro dela não admita.
+- **`publicar.subpasta_da_obra(fm, stem, eh_fatia)`** — decide pelo
+  **frontmatter**, nunca pelo que por acaso está no lote: índice (tem `partes:`)
+  e fatia (tem `parte:` + `obra:`) ganham pasta; o resto fica solto. Publicar a
+  obra inteira, só o índice ou só uma fatia dá o **mesmo** destino — sem isso, a
+  segunda passada espalharia a obra por duas pastas.
+- **Categoria `reorganizado`** no console e no `RELATORIO-PUBLICACAO.md`, com a
+  seção "📁 Reorganizadas (soltas → pasta da obra)" listando cada movimento.
+
+### Alterado
+
+- **`publicar.py`** — o destino agora é `pasta do TIPO` + `subpasta da ÁREA` +
+  **`pasta da OBRA`**. `destino_de()` não mudou (continua devolvendo só a
+  categoria): a pasta da obra é uma decisão separada, aplicada por nota.
+  Nota única — o documento pequeno que o `fatiar.py` copia inteiro — **continua
+  solta** na categoria: pasta com um arquivo só é ruído, não organização.
+- **`corpus-vault/`** (fixture de caracterização) migrado para o layout novo
+  (`01-Doutrina/Curso_Machado/`, `Obra_Fantasma/`, `Sem_Fatias/`). O golden
+  `RELATORIO-VAULT.md` saiu **byte a byte idêntico** — é a prova versionada de
+  que os leitores do vault são indiferentes ao caminho.
+- `taxonomia.py` passa a importar `comum` (uma via só: `comum.py` não importa
+  taxonomia, por contrato — não há ciclo).
+
+### Migração — quem já publicou não faz nada
+
+A primeira publicação depois desta versão **MOVE** cada nota solta para a pasta
+da sua obra e reporta em `reorganizado`. Mover, e não copiar, é o ponto: duas
+cópias com o mesmo stem são **erro** no `auditar_vault` ("wikilinks ambíguos") e
+o Obsidian não saberia qual abrir.
+
+Reorganizar **não é reescrever**: o arquivo vai intacto, então a nota que você
+editou à mão chega curada na pasta nova e a TRAVA 3 continua valendo — ela é
+movida **e** reportada como `conflito`, sem ser sobrescrita. O `--dry` anuncia
+todos os movimentos sem executar nenhum, e conta o conteúdo como `inalterado`
+(não como `publicado`) para o veredito da simulação sair honesto. Se a nota
+existir **nos dois** lugares (migração pela metade), nada é movido e sai um aviso
+de ambiguidade específico, pedindo para conferir e apagar a solta.
+
+Nada disso toca links: o Obsidian resolve wikilink por **nome**, não por
+caminho, e os painéis Dataview dos MOCs filtram por frontmatter
+(`FROM -"99-Templates"` é a única cláusula de pasta, e é exclusão). Os
+scanners do vault (`auditar_vault`, `conectar`, `radar`, o pré-voo do painel)
+já eram todos recursivos. As pastas `2-MARKDOWN-BRUTO`/`3-MARKDOWN-LIMPO`
+**continuam planas** — a mudança é só do lado do vault.
+
+Salvaguarda: `comum.IGNORAR_PASTAS` é testado contra **todo** componente do
+caminho, então uma pasta de obra chamada `Radar` ou `99-Templates` apagaria a
+obra de todos os scanners. `pasta_da_obra()` recusa esses nomes (e os prefixos
+`.`, `_`, `RELATORIO`), prefixando com `obra-`.
+
 ## [3.24.0] — 2026-08-14 · E-book de primeira classe — ePUB/MOBI viram Markdown citável
 
 O painel **aceitava** ePUB/MOBI desde sempre, mas a rota que os convertia era

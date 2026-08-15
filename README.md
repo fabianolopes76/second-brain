@@ -240,9 +240,13 @@ python3 publicar.py 3-MARKDOWN-LIMPO/ 4-OBSIDIAN-VAULT/ --dry
 python3 publicar.py 3-MARKDOWN-LIMPO/ 4-OBSIDIAN-VAULT/
 # Roteia por tipo→pasta (perfil): Doutrina/Artigo→01-Doutrina/<Área>/,
 # Legislação/Parecer→02, Jurisprudência/Súmula→03, interno→04-Modelos-Internos.
+# Obra FATIADA ganha pasta própria dentro da categoria, com o nome resumido
+# (Titulo_Autor): índice + fatias juntos. Nota única fica solta na categoria.
 # Travas: nota REPROVADA não publica; copiar (nunca mover); em conflito o
 # VAULT VENCE (curadoria humana) — --force sobrescreve conscientemente.
 # Idempotente; gera RELATORIO-PUBLICACAO.md (contagens + itens A-conferir).
+# Vault publicado no layout plano antigo? A primeira publicação MOVE cada
+# nota para a pasta da sua obra ("reorganizado") — conteúdo intocado.
 
 # FASE 5 · MOCs — criar para uma área nova / regenerar os painéis
 python3 gerar_moc.py 4-OBSIDIAN-VAULT/ --area Civil
@@ -297,12 +301,27 @@ ACERVO_ESTRITO=1 python3 auditar_acervo.py 3-MARKDOWN-LIMPO/
    ├── 01-Doutrina/  02-Legislacao/  03-Jurisprudencia/  04-Modelos-Internos/
    └── 99-Templates/       Template_Nota_Indice.md + Template_Fatia.md
    ```
+   Dentro da categoria, **cada obra fatiada tem a sua pasta** — um livro de 40
+   fatias soltas afogaria a barra lateral do Obsidian:
+   ```
+   01-Doutrina/Tributário/
+   ├── Curso-Direito-Tributario_Machado/     ← nome resumido da obra
+   │   ├── TRIB_DOUT_2023_Curso-Direito-Tributario_Machado_INDICE.md
+   │   └── TRIB_DOUT_2023_Curso-Direito-Tributario_Machado_p01.md … _p47.md
+   └── Manual-Processo_Didier/
+   02-Legislacao/
+   └── TRIB_LEGIS_1966_CTN_Uniao.md          ← nota única: solta (pasta de 1 é ruído)
+   ```
+   A pasta é derivada do nome do arquivo (`[Titulo]_[Autor]`); nome fora do
+   padrão cai no nome inteiro, sem sufixo. Como o Obsidian resolve wikilink
+   por **nome**, e não por caminho, a subpasta não afeta link nenhum nem os
+   painéis Dataview (que filtram por frontmatter).
 2. Copie `Roteiro-Base-Juridica/vault-inicial/` para dentro do vault (MOCs de Tributário e Processo Civil prontos + templates). O conteúdo entra pelo `publicar.py` (etapa 8) — nunca arraste arquivos à mão: a publicação valida antes e respeita a curadoria existente.
 3. No Obsidian: instale o plugin **Dataview** → os painéis dos MOCs se preenchem sozinhos a partir do frontmatter.
 4. Convenções que os painéis assumem:
    - Notas-índice têm `partes:`; fatias têm `parte:` + `obra:` — os painéis filtram `!parte` para listar obras, não pedaços.
    - `area` é lista (`[Tributário]`); `tipo`, `status` e `confiabilidade` usam o vocabulário do perfil (ver `taxonomia.py`). **Valor fora do vocabulário = nota some do painel.**
-   - Nome de arquivo: `[AREA]_[TIPO]_[ANO]_[Titulo-Curto]_[Autor].md` (códigos em `taxonomia.CODIGO_AREA/CODIGO_TIPO`; fatias = mesmo prefixo + `_pNN`, índice + `_INDICE`).
+   - Nome de arquivo: `[AREA]_[TIPO]_[ANO]_[Titulo-Curto]_[Autor].md` (códigos em `taxonomia.CODIGO_AREA/CODIGO_TIPO`; fatias = mesmo prefixo + `_pNN`, índice + `_INDICE`). Desse nome sai também a **pasta da obra** (`taxonomia.pasta_da_obra` → `Titulo-Curto_Autor`) — nomear direito no bruto organiza o vault de graça.
 
 ## Guia do desenvolvedor
 

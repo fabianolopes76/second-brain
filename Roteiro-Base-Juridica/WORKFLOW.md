@@ -315,12 +315,21 @@ O validador entrega, prontas:
 ```
 4-OBSIDIAN-VAULT/
 ├── 00-Indices-MOCs/    (fontes.md, MOC-Tributario, MOC-Processo-Civil…)
-├── 01-Doutrina/        (por área)
-├── 02-Legislacao/
+├── 01-Doutrina/        (por área, e a obra fatiada em pasta própria)
+│   └── Tributário/
+│       ├── Curso-Direito-Tributario_Machado/   ← índice + todas as fatias
+│       │   ├── TRIB_DOUT_2023_Curso-Direito-Tributario_Machado_INDICE.md
+│       │   └── …_p01.md … _p47.md
+│       └── Manual-Processo_Didier/
+├── 02-Legislacao/      (nota única fica solta: pasta de 1 arquivo é ruído)
 ├── 03-Jurisprudencia/
 ├── 04-Modelos-Internos/
 └── 99-Templates/       (nota-índice e fatia)
 ```
+
+A pasta da obra sai do nome do arquivo (`[Titulo]_[Autor]`, via
+`taxonomia.pasta_da_obra`). Wikilink do Obsidian resolve por **nome**, não por
+caminho — a subpasta não quebra link nenhum nem os painéis Dataview.
 
 ### 5.2 Prompt (Cowork)
 > Distribua os arquivos de `3-MARKDOWN-LIMPO/` em `4-OBSIDIAN-VAULT/` conforme `tipo` e `area` do frontmatter. Atualize os MOCs da área. Gere `RELATORIO.md` com contagem por área/tipo/status e a lista dos itens `A-conferir`.

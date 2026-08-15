@@ -25,6 +25,8 @@ import re
 import sys
 from typing import NamedTuple
 
+import comum
+
 # ═══════════════════════════════════════════════════════════════════════════
 # NÚCLEO — invariante entre domínios
 # ═══════════════════════════════════════════════════════════════════════════
@@ -507,6 +509,36 @@ def analisar_nome(nome):
     return r
 
 
+def pasta_da_obra(stem: str) -> str:
+    """Nome RESUMIDO da obra — a pasta própria dela dentro da categoria.
+
+    `[AREA]_[TIPO]_[ANO]_[Titulo]_[Autor]` → `Titulo_Autor`: área e tipo já
+    são a pasta-mãe, e o ano não ajuda a reconhecer a obra na barra lateral
+    do Obsidian. O sufixo `_INDICE`/`_pNN` é irrelevante — índice e fatias
+    da mesma obra TÊM de cair na mesma pasta, então os dois entram aqui e
+    saem com o mesmo nome.
+
+    Nome fora do padrão cai no stem inteiro (sem o sufixo): organizar o
+    vault nunca pode depender de o nome estar certo — quem cobra a
+    convenção é o auditar_vault, com aviso, não a publicação.
+    """
+    n = analisar_nome(stem)
+    base = (f'{n["titulo"]}_{n["autor"]}' if n["titulo"] and n["autor"]
+            else _SUFIXO_FATIA.sub("", stem[:-3] if stem.lower().endswith(".md")
+                                   else stem))
+    # Mesmo slug que nomeia os ARQUIVOS (comum.prefixo_fatia): a pasta não
+    # pode admitir caractere que o arquivo dentro dela não admite.
+    nome = comum.prefixo_fatia(base)
+    # Nomes que apagariam a obra do acervo ou confundiriam os scanners:
+    # IGNORAR_PASTAS é testado contra TODO componente do caminho (comum.py),
+    # e `RELATORIO`/`_`/`.` são os prefixos que todo varredor pula.
+    if (not nome or nome in comum.IGNORAR_PASTAS
+            or nome.startswith((".", "_"))
+            or nome.upper().startswith("RELATORIO")):
+        nome = f"obra-{nome}" if nome else "obra-sem-nome"
+    return nome
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Autoteste
 # ═══════════════════════════════════════════════════════════════════════════
@@ -603,6 +635,26 @@ def _autoteste():
     ex2 = analisar_nome("TRIB_DOUT_2023_Curso_Machado_p03.md")
     ok(ex2["eh_derivado"] and not ex2["avisos"],
        f"fatia não deveria gerar aviso: {ex2}")
+
+    # pasta_da_obra: nome resumido = Titulo_Autor, IGUAL para índice e fatias
+    ok(pasta_da_obra("TRIB_DOUT_2023_Curso-Direito-Tributario_Machado")
+       == "Curso-Direito-Tributario_Machado",
+       f"pasta do nome canônico: "
+       f"{pasta_da_obra('TRIB_DOUT_2023_Curso-Direito-Tributario_Machado')}")
+    _p = {pasta_da_obra(f"TRIB_DOUT_2023_Curso_Machado{s}")
+          for s in ("", "_INDICE", "_p01", "_p47", ".md", "_INDICE.md")}
+    ok(_p == {"Curso_Machado"},
+       f"índice e fatias TÊM de dar a mesma pasta: {_p}")
+    # fora do padrão: não bloqueia, cai no stem sem o sufixo
+    ok(pasta_da_obra("anotacoes soltas_INDICE") == "anotacoes-soltas",
+       f"fallback fora do padrão: {pasta_da_obra('anotacoes soltas_INDICE')}")
+    # nomes que apagariam a obra de todos os scanners do vault
+    for venenoso in sorted(comum.IGNORAR_PASTAS) + ["_oculta", ".oculta",
+                                                    "RELATORIO-x", "___"]:
+        p = pasta_da_obra(venenoso)
+        ok(p not in comum.IGNORAR_PASTAS and not p.startswith((".", "_"))
+           and not p.upper().startswith("RELATORIO") and p,
+           f"pasta venenosa não foi neutralizada: {venenoso!r} → {p!r}")
 
     if erros:
         for e in erros:

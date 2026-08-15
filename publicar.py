@@ -8,8 +8,17 @@ e podia arquivar errado ou esquecer nota, agora é roteamento por regra:
 
   destino = pasta do TIPO (taxonomia.PASTAS_PUBLICACAO, config do perfil)
             + subpasta da ÁREA quando a pasta subdivide (01-Doutrina/)
+            + PASTA DA OBRA quando a obra foi fatiada (índice + fatias)
   exceção: documento interno (abnt=False) → 04-Modelos-Internos, sempre.
   fatias vão junto do seu índice (mesma pasta de destino).
+
+Uma obra fatiada tem dezenas de `_pNN.md`: soltas na pasta da categoria elas
+afogam a barra lateral do Obsidian e escondem onde uma obra começa e a outra
+termina. Cada obra fatiada ganha então uma pasta com o seu nome resumido
+(`taxonomia.pasta_da_obra`) — nota única continua solta, porque pasta de um
+arquivo só é ruído. Quem já publicou no layout plano não precisa fazer nada:
+a publicação MOVE o arquivo antigo para a pasta nova (mover preserva a
+curadoria; copiar criaria stem duplicado, que é erro no auditar_vault).
 
 TRÊS TRAVAS:
   1. Validação verde: nota REPROVADA pelo auditar_acervo NÃO é publicada —
@@ -66,6 +75,24 @@ def destino_de(fm, stem):
     return rel, ""
 
 
+def subpasta_da_obra(fm, stem, eh_fatia) -> str:
+    """Pasta própria da obra dentro da categoria, ou "" (fica solta).
+
+    Decidida SÓ pelo frontmatter — nunca pelo que por acaso está no lote.
+    Publicar a obra inteira, só o índice ou só uma fatia tem de dar o mesmo
+    destino, senão a segunda passada espalharia a obra por duas pastas.
+
+    A fatia deriva a pasta do alvo de `obra:` ([[<prefixo>_INDICE]]) e o
+    índice do próprio stem: pasta_da_obra ignora o sufixo, então os dois
+    chegam ao MESMO nome e a fatia continua caindo junto do seu índice.
+    """
+    if eh_fatia:
+        return taxonomia.pasta_da_obra(alvo_wikilink(fm.get("obra")))
+    if not vazio(fm.get("partes")):                 # nota-índice de obra fatiada
+        return taxonomia.pasta_da_obra(stem)
+    return ""                                       # nota única: solta na categoria
+
+
 def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     arquivos = sorted(f for f in origem.rglob("*.md")
                       if not f.name.startswith(("RELATORIO", "_")))
@@ -118,27 +145,29 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
               + [x for x in planos if x["eh_fatia"]]):
         f, fm = p["path"], p["fm"]
 
-        # ── destino ──
+        # ── destino: categoria (+área) e, dentro dela, a pasta da obra ──
         if p["eh_fatia"]:
             obra = alvo_wikilink(fm.get("obra"))
             if obra in nao_publicou:
                 resultado["retido"] += 1
                 retidos[(obra, nao_publicou[obra])] += 1
                 continue
-            rel = destino_indice.get(obra)
-            if rel is None:
-                rel, motivo = destino_de(fm, f.stem)   # órfã: roteia por conta própria
-                if rel is None:
+            rel_cat = destino_indice.get(obra)
+            if rel_cat is None:
+                rel_cat, motivo = destino_de(fm, f.stem)  # órfã: roteia por conta própria
+                if rel_cat is None:
                     resultado["bloqueado"] += 1
                     detalhes["bloqueado"].append(f"{f.name} — fatia: {motivo}")
                     continue
         else:
-            rel, motivo = destino_de(fm, f.stem)
-            if rel is None:
+            rel_cat, motivo = destino_de(fm, f.stem)
+            if rel_cat is None:
                 resultado["bloqueado"] += 1
                 detalhes["bloqueado"].append(f"{f.name} — {motivo}")
                 nao_publicou[f.stem] = f"índice sem rota ({motivo.split(' — ')[0]})"
                 continue
+        sub = subpasta_da_obra(fm, f.stem, p["eh_fatia"])
+        rel = rel_cat / sub if sub else rel_cat
 
         # ── TRAVA 1: validação verde (fatias herdam do índice; auditar já sabe) ──
         r = auditar(f)
@@ -154,8 +183,41 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         alvo = vault / rel / f.name
         etiqueta = f"{rel}/{f.name}"
 
+        # ── MIGRAÇÃO do layout plano (vaults publicados antes da v3.25) ──
+        # A nota desta obra está solta na pasta da categoria. MOVER, nunca
+        # copiar: duas cópias com o mesmo stem são ERRO no auditar_vault
+        # ("wikilinks ambíguos") e o Obsidian não saberia qual abrir. Mover
+        # leva a curadoria intacta — reorganizar não é reescrever, então a
+        # comparação de conteúdo logo abaixo continua mandando.
+        antigo = vault / rel_cat / f.name
+        lendo = alvo                    # de onde a comparação vai ler
+        ja_avisado = False              # o aviso específico já cobre o caso
+        try:
+            if sub and antigo != alvo and antigo.exists():
+                if alvo.exists():
+                    detalhes["ambiguidade"].append(
+                        f"{f.name} — existe SOLTA em {rel_cat}/ e também em "
+                        f"{rel}/ (stem duplicado: o Obsidian não sabe qual "
+                        "abrir) — confira as duas e apague a solta")
+                    ja_avisado = True
+                else:
+                    resultado["reorganizado"] += 1
+                    detalhes["reorganizado"].append(
+                        f"{rel_cat}/{f.name} → {etiqueta}")
+                    if dry:
+                        lendo = antigo   # dry-run honesto: o conteúdo já está lá
+                    else:
+                        alvo.parent.mkdir(parents=True, exist_ok=True)
+                        antigo.replace(alvo)
+                    stems_vault[f.stem.casefold()] = Path(str(rel)) / f.name
+        except OSError as e:
+            resultado["falha_disco"] += 1
+            detalhes["falha_disco"].append(f"{etiqueta} — {e.strerror or e}")
+            continue
+
         ja = stems_vault.get(f.stem.casefold())
-        if ja is not None and Path(str(ja)) != (Path(str(rel)) / f.name):
+        if (ja is not None and not ja_avisado
+                and Path(str(ja)) != (Path(str(rel)) / f.name)):
             detalhes["ambiguidade"].append(
                 f"{f.name} — nome já existe em {ja} (wikilink ambíguo no "
                 "Obsidian; nada é sobrescrito — renomeie no bruto e refatie, "
@@ -167,9 +229,9 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         # seguintes — re-rodar completa (o que copiou vira "inalterado").
         try:
             texto_gravar = p["texto"]
-            if alvo.exists():
-                texto_vault = alvo.read_text(encoding="utf-8",
-                                             errors="replace")
+            if lendo.exists():
+                texto_vault = lendo.read_text(encoding="utf-8",
+                                              errors="replace")
                 if texto_vault == p["texto"]:
                     resultado["inalterado"] += 1
                     continue
@@ -226,8 +288,8 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
     modo = "DRY-RUN — nada gravado" if dry else "publicação efetiva"
     print(f"\n{'='*72}\nPUBLICAÇÃO — {origem} → {vault}  ({modo})\n{'='*72}")
     LIMITE = 20
-    for cat in ("publicado", "sobrescrito", "inalterado", "conflito",
-                "reprovado", "bloqueado", "retido", "falha_disco"):
+    for cat in ("publicado", "sobrescrito", "inalterado", "reorganizado",
+                "conflito", "reprovado", "bloqueado", "retido", "falha_disco"):
         if resultado[cat]:
             print(f"{cat:12}: {resultado[cat]}")
             for linha in detalhes[cat][:LIMITE]:
@@ -248,8 +310,9 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         L = [f"# Relatório de Publicação — {vault.name}", ""]
         L.append("| resultado | qtd |")
         L.append("|---|---|")
-        for cat in ("publicado", "sobrescrito", "inalterado", "conflito",
-                    "reprovado", "bloqueado", "retido", "falha_disco"):
+        for cat in ("publicado", "sobrescrito", "inalterado", "reorganizado",
+                    "conflito", "reprovado", "bloqueado", "retido",
+                    "falha_disco"):
             if resultado[cat]:
                 L.append(f"| {cat} | {resultado[cat]} |")
         for eixo in ("area", "tipo", "status"):
@@ -259,6 +322,13 @@ def publicar(origem: Path, vault: Path, dry: bool, force: bool):
         if a_conferir:
             L += ["", "## ⚠ Itens A-conferir (não citar sem revisão humana)", ""]
             L += [f"- {x}" for x in a_conferir]
+        if detalhes["reorganizado"]:
+            L += ["", "## 📁 Reorganizadas (soltas → pasta da obra)", "",
+                  "Notas que estavam soltas na pasta da categoria e foram "
+                  "MOVIDAS para a pasta da sua obra. O conteúdo não foi "
+                  "tocado e os wikilinks não mudam (o Obsidian resolve link "
+                  "por nome, não por caminho).", ""]
+            L += [f"- {x}" for x in detalhes["reorganizado"]]
         for cat in ("conflito", "reprovado", "bloqueado", "retido",
                     "falha_disco"):
             if detalhes[cat]:
