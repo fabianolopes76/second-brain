@@ -71,6 +71,7 @@ def auditar_grafo(notas):
 
     # MOCs declaram cobertura de área pelo próprio frontmatter
     areas_cobertas, areas_usadas = set(), defaultdict(int)
+    tags_usadas = defaultdict(int)         # tag → nº de notas (censo do tema)
     fatias_por_indice = defaultdict(int)   # stem do índice → nº de fatias
 
     for n in notas:
@@ -150,6 +151,16 @@ def auditar_grafo(notas):
                 r["avisos"].append(
                     f"confiabilidade fora do vocabulário: '{cf}' "
                     f"(válidos: {', '.join(taxonomia.CONFIABILIDADE)})")
+            # tags: só CENSO aqui. O aviso é global (uma linha por tag, não
+            # por nota) pela mesma razão das fatias retidas do publicar.py:
+            # 200 avisos idênticos ensinam a não ler o relatório. E, ao
+            # contrário de tipo/status, tag desconhecida não esconde a nota
+            # de painel nenhum — o risco é a fragmentação silenciosa
+            # (`holding`, `holdings`, `Holding` = três temas), que se
+            # enxerga na CONTAGEM, não nota a nota.
+            for t in (fm.get("tags") or []):
+                if str(t).strip():
+                    tags_usadas[str(t)] += 1
 
             # — coerência entre eixos —
             coerente, motivo = taxonomia.par_coerente(
@@ -174,6 +185,18 @@ def auditar_grafo(notas):
         if area not in areas_cobertas:
             globais.append(f"área '{area}' usada em {qtd} nota(s) mas SEM MOC "
                            f"que a cubra — essas notas não têm porta de entrada")
+    # UMA linha para todas as tags novas, não uma por nota: o objetivo é
+    # decidir "adoto ou corrijo", e para isso o que importa é quanto cada
+    # tema já pesa no acervo.
+    fora_voc = {t: q for t, q in tags_usadas.items() if t not in taxonomia.TAGS}
+    if fora_voc:
+        amostra = sorted(fora_voc.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+        globais.append(
+            f"{len(fora_voc)} tag(s) fora do vocabulário, em "
+            f"{sum(fora_voc.values())} uso(s): "
+            + ", ".join(f"{t} ({q})" for t, q in amostra)
+            + ("…" if len(fora_voc) > 8 else "")
+            + " — adote no painel (01 · Vocabulário) ou corrija")
 
     resumo = {
         "notas": len(notas),
@@ -181,7 +204,10 @@ def auditar_grafo(notas):
         "indices": sum(1 for n in notas if n.get("eh_indice")),
         "fatias": sum(1 for n in notas if n.get("eh_fatia")),
         "areas": dict(sorted(areas_usadas.items())),
-        "areas_sem_moc": [g.split("'")[1] for g in globais],
+        "areas_sem_moc": [g.split("'")[1] for g in globais
+                          if g.startswith("área '")],
+        "tags": dict(sorted(tags_usadas.items())),
+        "tags_fora_vocabulario": sorted(fora_voc),
     }
     return resultados, globais, resumo
 

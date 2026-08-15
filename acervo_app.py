@@ -54,6 +54,7 @@ import comum
 import frontmatter
 import taxonomia
 import triagem
+import vocabulario
 from auditar_acervo import (CODS_FICHA as _CODS_FICHA,
                             auditar as _auditar_arquivo,
                             nota as _nota_auditoria,
@@ -1182,7 +1183,146 @@ def _vocab():
         "areas": sorted(set(taxonomia.AREAS.values())),
         "status": list(taxonomia.STATUS),
         "confiabilidade": list(taxonomia.CONFIABILIDADE),
+        # Vocabulário de temas: sugestão, não trava. O formulário aceita tag
+        # nova (é assim que o vocabulário cresce) e quem cobra coerência é o
+        # aviso do auditar_vault, na contagem.
+        "tags": sorted(taxonomia.TAGS),
+        "tags_titulo": dict(taxonomia.TAGS),
         "listas": list(_CAMPOS_LISTA),
+    }
+
+
+_VOC_CACHE = {"chave": None, "uso": None}
+_VOC_LOCK = threading.Lock()
+# Teto de arquivos lidos no censo. Um vault de curadoria tem centenas de
+# obras, não dezenas de milhares — e o censo serve para DECIDIR sobre
+# vocabulário, não para auditar. Estourou, a tela avisa que a amostra é
+# parcial em vez de fazer o painel esperar minutos no 9p do WSL2.
+_VOC_TETO = 4000
+
+
+_RE_FATIA_NOME = re.compile(r"_p\d{2,}$")
+
+
+def _uso_vocabulario() -> dict:
+    """Censo de áreas e tags EM USO nas SUAS FICHAS (bruto + limpo).
+
+    É o que transforma a lista de termos em ferramenta de curadoria: sem a
+    contagem não dá para decidir entre adotar um termo novo e corrigir um
+    erro de digitação (`holding` com 1 uso ao lado de `holdings` com 12).
+
+    NÃO varre o vault, de propósito. O vault definitivo mora tipicamente
+    num Dropbox montado por 9p do WSL2, e medimos: só a passada de `stat`
+    lá custava 23 s — inaceitável para abrir uma tela. E é redundante: o
+    que está no vault veio daqui, e o legado que não veio já tem censo
+    próprio no RELATORIO-VAULT.md (auditar_vault) e no VOCABULARIO.md
+    (conectar). A ficha, que é o que esta tela edita, vive no bruto.
+
+    Cacheado por assinatura barata (nº de arquivos + mtime máximo por
+    base), com teto de segurança.
+    """
+    areas, tags = {}, {}
+    vistos = set()
+    truncado = False
+
+    def _somar(f: Path):
+        try:
+            if f.stat().st_size > 2_000_000:
+                return
+            fm = frontmatter.ler(f.read_text(encoding="utf-8",
+                                             errors="replace")).campos
+        except OSError:
+            return
+        if str(fm.get("tipo") or "") == "MOC" or not comum.vazio(fm.get("hub_id")):
+            return
+        if not comum.vazio(fm.get("parte")):
+            return                       # fatia não conta: o termo é da obra
+        for a in (fm.get("area") or []):
+            if str(a).strip():
+                areas[str(a)] = areas.get(str(a), 0) + 1
+        for t in (fm.get("tags") or []):
+            if str(t).strip():
+                tags[str(t)] = tags.get(str(t), 0) + 1
+
+    bases = []
+    if CFG.get("root"):
+        bases += [Path(CFG["root"]) / "2-MARKDOWN-BRUTO",
+                  Path(CFG["root"]) / "3-MARKDOWN-LIMPO"]
+    bases = [b for b in bases if b.is_dir()]
+
+    # ── assinatura barata: só stat, sem ler conteúdo ──
+    alvos, chave = [], []
+    for base in bases:
+        n, mt = 0, 0
+        try:
+            for f in base.rglob("*.md"):
+                if (f.name.startswith(("RELATORIO", "_"))
+                        or any(p in comum.IGNORAR_PASTAS for p in f.parts)):
+                    continue
+                # fatia fora ANTES do stat: uma obra de 47 fatias custaria 47
+                # stats para não contribuir com nada (o termo é da obra)
+                if _RE_FATIA_NOME.search(f.stem):
+                    continue
+                if f.stem in vistos:     # a mesma obra em duas etapas: uma vez
+                    continue
+                vistos.add(f.stem)
+                if len(alvos) >= _VOC_TETO:
+                    truncado = True
+                    break
+                alvos.append(f)
+                n += 1
+                try:
+                    mt = max(mt, f.stat().st_mtime_ns)
+                except OSError:
+                    pass
+        except OSError:
+            chave = None                 # 9p do WSL2 sob carga: sem cache
+            break
+        if chave is not None:
+            chave.append((str(base), n, mt))
+    chave = tuple(chave) if chave is not None else None
+
+    with _VOC_LOCK:
+        if chave is not None and chave == _VOC_CACHE["chave"]:
+            return _VOC_CACHE["uso"]
+
+    for f in alvos:
+        _somar(f)
+    uso = {"areas": areas, "tags": tags, "truncado": truncado,
+           "lidos": len(alvos)}
+    with _VOC_LOCK:
+        _VOC_CACHE["chave"] = chave
+        _VOC_CACHE["uso"] = uso
+    return uso
+
+
+def _vocabulario_estado() -> dict:
+    """O que a tela 🏷️ Vocabulário mostra: base × usuário × uso real."""
+    voc, problemas = vocabulario.ler()
+    uso = _uso_vocabulario()
+    base_areas = set(taxonomia.PERFIL_ATIVO.areas.values())
+    usuario_areas = {a["nome"] for a in voc["areas"]}
+    usuario_tags = {t["tag"] for t in voc["tags"]}
+    if uso.get("truncado"):
+        problemas = problemas + [
+            f"censo parcial: parei em {uso['lidos']} nota(s) para não travar "
+            "o painel — as contagens abaixo são uma amostra"]
+    return {
+        "arquivo": str(vocabulario.caminho()),
+        "problemas": problemas,
+        "areas": [{"nome": n,
+                   "codigo": taxonomia.CODIGO_AREA.get(n, ""),
+                   "origem": ("perfil" if n in base_areas
+                              else "usuario" if n in usuario_areas else "uso"),
+                   "usos": uso["areas"].get(n, 0)}
+                  for n in sorted(set(taxonomia.AREAS.values())
+                                  | set(uso["areas"]))],
+        "tags": [{"tag": t,
+                  "titulo": taxonomia.TAGS.get(t, ""),
+                  "origem": "usuario" if t in usuario_tags else (
+                      "perfil" if t in taxonomia.PERFIL_ATIVO.tags else "uso"),
+                  "usos": uso["tags"].get(t, 0)}
+                 for t in sorted(set(taxonomia.TAGS) | set(uso["tags"]))],
     }
 
 
@@ -1533,7 +1673,7 @@ def resumo_fichas():
 # ---------------------------------------------------------------------------
 _CAMPOS_IA = ("autoria", "titulo", "subtitulo", "local_publicacao", "editora",
               "ano", "edicao", "ementa", "norma_numero", "norma_data",
-              "tipo_fonte", "tipo", "area", "status", "resumo")
+              "tipo_fonte", "tipo", "area", "status", "tags", "resumo")
 
 
 def gerar_prompt_ia():
@@ -1578,14 +1718,26 @@ def gerar_prompt_ia():
         f"- tipo_fonte: {', '.join(v['tipos_fonte'])}\n"
         f"- tipo: {', '.join(v['tipos'])}\n"
         f"- area: {', '.join(v['areas'])}\n"
-        f"- status: {', '.join(v['status'])}\n\n"
+        f"- status: {', '.join(v['status'])}\n"
+        # tags é o ÚNICO vocabulário aberto: pedir "escolha da lista" faria a
+        # IA calar sempre que o tema certo ainda não estivesse cadastrado —
+        # e é justamente pelo uso que o vocabulário de temas cresce.
+        + (f"- tags (PREFIRA estes; se nenhum servir, proponha um novo no "
+           f"mesmo formato): {', '.join(v['tags'])}\n"
+           if v["tags"] else
+           "- tags: ainda não há vocabulário de temas — proponha de 2 a 5 "
+           "temas por documento\n")
+        + "\nFORMATO DAS TAGS: minúsculas, sem acento e sem espaço "
+        "(use hífen); barra indica hierarquia. Ex.: prescricao, "
+        "planejamento/holding.\n\n"
         "FORMATO DE SAÍDA (obrigatório: responda APENAS este JSON, sem "
         "comentários nem texto fora dele):\n"
         '{"fichas": [{"arquivo": "<nome exato do arquivo>.md", '
         '"campos": {"autoria": "SOBRENOME, Nome", "titulo": "...", '
-        '"ano": "...", "resumo": "3 a 8 linhas"}}]}\n'
+        '"ano": "...", "tags": "prescricao; decadencia", '
+        '"resumo": "3 a 8 linhas"}}]}\n'
         f"Campos aceitos em \"campos\": {', '.join(_CAMPOS_IA)}. "
-        "Para autoria/area com múltiplos valores, separe com \"; \".\n\n"
+        "Para autoria/area/tags com múltiplos valores, separe com \"; \".\n\n"
         + "\n\n".join(blocos))
     return {"pendentes": len(blocos), "prompt": prompt}
 
@@ -1707,9 +1859,29 @@ def aplicar_lote_ia(resposta: str):
             if not val:
                 descartes.append(f"{k} (vazio)")
                 continue
+            if k == "tags":
+                # O ÚNICO vocabulário aberto: tag inédita não é descartada,
+                # é normalizada e adotada — é assim que o eixo temático
+                # nasce. Quem vigia a fragmentação é o censo do
+                # auditar_vault e a tela 🏷️ Vocabulário, não este filtro.
+                limpas, novas = [], []
+                for c in val.split(";"):
+                    t = comum.tag_valida(c)
+                    if t and t not in limpas:
+                        limpas.append(t)
+                        if t not in taxonomia.TAGS:
+                            novas.append(t)
+                if not limpas:
+                    descartes.append("tags (vazias após normalizar)")
+                    continue
+                if novas:
+                    avisos.append(f"{nome}: tag(s) nova(s) — {', '.join(novas)}"
+                                  " (aplicadas; adote em 01 · Vocabulário)")
+                campos[k] = "; ".join(limpas)
+                continue
             if k in vocab_de:
                 candidatos = ([x.strip() for x in val.split(";")]
-                              if k == "area" else [val])
+                              if k in _CAMPOS_LISTA else [val])
                 validos = [c for c in candidatos if c in vocab_de[k]]
                 fora = [c for c in candidatos if c not in vocab_de[k]]
                 if fora:
@@ -2165,6 +2337,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(atalhos(), ensure_ascii=False))
         if u.path == "/api/vocab":
             return self._send(200, json.dumps(_vocab(), ensure_ascii=False))
+        if u.path == "/api/vocabulario":
+            return self._send(200, json.dumps(_vocabulario_estado(),
+                                              ensure_ascii=False))
         if u.path == "/api/fichas":
             return self._send(200, json.dumps(listar_fichas(), ensure_ascii=False))
         if u.path == "/api/ia_prompt":
@@ -2347,6 +2522,62 @@ class Handler(BaseHTTPRequestHandler):
                 {"ok": rcmd.returncode == 0, "msg": saida[:400]},
                 ensure_ascii=False))
 
+        if u.path == "/api/vocabulario":
+            # Cadastra/remove área ou tema. Nada é gravado em nota nenhuma:
+            # o vocabulário é uma LISTA, e mudar a lista só muda o que o
+            # painel sugere e o que o auditor conta. Remover um termo em uso
+            # não apaga nada — as notas passam a aparecer como "fora do
+            # vocabulário", que é exatamente o pedido de quem removeu.
+            op = str(data.get("op") or "")
+            alvo = str(data.get("valor") or "")
+            problemas, criado = [], None
+            if op == "add_area":
+                criado, problemas = vocabulario.adicionar_area(
+                    alvo, str(data.get("codigo") or ""),
+                    [x.strip() for x in str(data.get("sinonimos") or "").split(";")
+                     if x.strip()],
+                    ocupados_base=set(taxonomia.CODIGO_AREA.values()))
+            elif op == "add_tag":
+                criado, problemas = vocabulario.adicionar_tag(
+                    alvo, str(data.get("titulo") or ""))
+            elif op == "rm_area":
+                _ok, problemas = vocabulario.remover_area(alvo)
+            elif op == "rm_tag":
+                _ok, problemas = vocabulario.remover_tag(alvo)
+            else:
+                return self._send(200, json.dumps(
+                    {"ok": False, "msg": f"operação desconhecida: {op}"}))
+            # o painel vive por horas: sem recarregar, o <select> das fichas
+            # continuaria mostrando a lista velha até reiniciar o servidor
+            problemas += taxonomia.recarregar_usuario()
+            with _FICHAS_LOCK:
+                _FICHAS_CACHE["chave"] = None    # a nota muda de grupo
+            return self._send(200, json.dumps(
+                {"ok": not (op.startswith("add_") and criado is None),
+                 "criado": criado, "msg": "; ".join(problemas),
+                 "estado": _vocabulario_estado()}, ensure_ascii=False))
+
+        if u.path == "/api/moc_novo":
+            # Área recém-criada não tem porta de entrada no vault até ganhar
+            # o MOC dela (o auditar_vault acusa "área sem MOC"). Síncrono, no
+            # padrão do moc_migrar: é rápido e não disputa o lock do JOB.
+            area = str(data.get("area") or "").strip()
+            if not area:
+                return self._send(200, json.dumps({"ok": False,
+                                                   "msg": "área vazia"}))
+            vault = vault_destino(_lembrar_vault(data.get("pasta", "")))
+            if not vault.is_dir():
+                return self._send(200, json.dumps(
+                    {"ok": False, "msg": f"vault não encontrado: {vault}"}))
+            gm = Path(CFG["scripts"]) / "gerar_moc.py"
+            rcmd = subprocess.run(["python3", str(gm), str(vault),
+                                   "--area", area],
+                                  capture_output=True, text=True, timeout=60)
+            saida = (rcmd.stdout or rcmd.stderr).strip()
+            return self._send(200, json.dumps(
+                {"ok": rcmd.returncode == 0, "msg": saida[:400]},
+                ensure_ascii=False))
+
         if u.path == "/api/acao":
             a = data.get("acao")
             if a != "arquivo" and (not CFG["root"] or not Path(CFG["root"]).is_dir()):
@@ -2514,6 +2745,20 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .et.ativa .extra,.et .extra.show{display:block}
 .dica{font-size:11.5px;color:var(--muted);margin-top:6px}
 .dica b{color:var(--ink-2)}
+/* vocabulário: termos que ligam/desligam com um clique */
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chip{font:500 11px var(--sans);padding:2px 8px;border-radius:999px;
+  border:1px solid var(--line);background:transparent;color:var(--muted);
+  cursor:pointer;transition:all .12s}
+.chip:hover{border-color:var(--brass);color:var(--ink-2)}
+.chip.on{background:var(--brass);border-color:var(--brass);color:#fff}
+.vrow{display:flex;align-items:center;gap:8px;padding:6px 0;
+  border-bottom:1px solid var(--line);font-size:12.5px}
+.vrow .vnome{flex:1;color:var(--ink-2)}
+.vrow .vtag{font:600 9.5px var(--sans);letter-spacing:.06em;
+  text-transform:uppercase;padding:1px 6px;border-radius:4px;
+  border:1px solid var(--line);color:var(--muted)}
+.vrow .vtag.novo{border-color:var(--warn);color:var(--warn)}
 .fase{font:600 10px var(--sans);letter-spacing:.1em;text-transform:uppercase;
   color:var(--brass);margin:14px 0 6px 56px}
 .fase:first-child{margin-top:0}
@@ -2808,6 +3053,13 @@ tr:hover td{background:var(--surf2)}
         </select>
       </div>
     </div>
+    <div class="campo" style="margin-top:14px">
+      <label>Vocabulário do acervo <span style="color:var(--muted);font-weight:400">— áreas e temas são seus, e o pipeline inteiro os respeita</span></label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="bnav" onclick="abrirVocab()">🏷️ Áreas e temas</button>
+      </div>
+      <div class="dica">Crie a <b>área</b> que faltava (vira pasta no vault e código no nome do arquivo) e os <b>temas</b> que ligam obras que não citam as mesmas normas. Termo em uso que ninguém cadastrou aparece lá para você <b>adotar ou corrigir</b>.</div>
+    </div>
   </div>
 </section>
 
@@ -3068,6 +3320,37 @@ tr:hover td{background:var(--surf2)}
         <button class="primary" onclick="salvarFicha()" style="flex:1">💾 Salvar e revalidar</button>
       </div>
     </div>
+  </div>
+</aside>
+
+<!-- SLIDEOVER · VOCABULÁRIO (áreas e temas do usuário) -->
+<div class="sov-bg" id="vsovBg" onclick="fecharVocab()"></div>
+<aside class="sover fichas" id="vsov" aria-label="Vocabulário">
+  <div class="sov-head">
+    <h2 style="font-size:14px">🏷️ Vocabulário</h2>
+    <button class="fechar" onclick="fecharVocab()" title="fechar (Esc)">✕</button></div>
+  <div class="sov-body">
+    <p class="sov-dica" id="vsovInfo">carregando…</p>
+
+    <div class="fgrupo">📐 Áreas</div>
+    <div class="dica">A área decide a <b>pasta</b> no vault e o <b>código</b> do nome do arquivo (<code>TRIB_…</code>). O código é derivado do nome e nunca repete.</div>
+    <div id="vAreas"></div>
+    <div class="inrow" style="margin-top:8px">
+      <input type="text" id="vAreaNova" placeholder="nome da área nova (ex.: Direito Digital)">
+      <button class="bnav" onclick="addVocab('add_area')">➕ Criar</button>
+    </div>
+
+    <div class="fgrupo" style="margin-top:18px">🏷️ Temas (tags)</div>
+    <div class="dica">O eixo <b>temático</b>: é o que liga obras que não citam as mesmas normas, e o que o Obsidian indexa no painel de tags. Minúsculas, sem acento; barra faz hierarquia (<i>planejamento/holding</i>).</div>
+    <div id="vTags"></div>
+    <div class="inrow" style="margin-top:8px">
+      <input type="text" id="vTagNova" placeholder="tema novo (ex.: prescricao)">
+      <input type="text" id="vTagTitulo" placeholder="rótulo legível (opcional)">
+      <button class="bnav" onclick="addVocab('add_tag')">➕ Criar</button>
+    </div>
+
+    <div class="alerta" id="vsovAviso" hidden></div>
+    <p class="sov-dica" style="margin-top:14px">Marcado como <b>fora do vocabulário</b> = está em uso nas notas mas ninguém cadastrou. Não some de painel nenhum: é só o convite a <b>adotar</b> (se o termo é bom) ou corrigir na ficha (se foi erro de digitação). Rode <b>🔗 Conectar</b> para atualizar o <code>VOCABULARIO.md</code> do vault.</p>
   </div>
 </aside>
 
@@ -3525,7 +3808,7 @@ function venvPadrao(){ venv.value = '~/venvs/acervo'; salvar({venv:'~/venvs/acer
 function abrirAmbiente(){ sovBg.classList.add('on'); sov.classList.add('on'); }
 function fecharAmbiente(){ sovBg.classList.remove('on'); sov.classList.remove('on'); }
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); fecharRadarIA(); fecharVaultCheck(); }
+  if(e.key === 'Escape'){ fecharAmbiente(); fecharInfo(); fecharFicha(); fecharAuditoria(); fecharIA(); fecharRadarIA(); fecharVaultCheck(); fecharVocab(); }
 });
 iaBg.addEventListener('click', e => { if(e.target === iaBg) fecharIA(); });
 radBg.addEventListener('click', e => { if(e.target === radBg) fecharRadarIA(); });
@@ -3604,10 +3887,92 @@ function abrirInfo(id){
 function fecharInfo(){ infoBg.classList.remove('on'); }
 infoBg.addEventListener('click', e => { if(e.target === infoBg) fecharInfo(); });
 
+/* ---------- vocabulário: áreas e temas criados pelo usuário ---------- */
+function abrirVocab(){
+  vsovBg.classList.add('on'); vsov.classList.add('on');
+  carregarVocab();
+}
+function fecharVocab(){
+  vsovBg.classList.remove('on'); vsov.classList.remove('on');
+}
+function _linhaVocab(o, tipo){
+  const eh_perfil = o.origem === 'perfil';
+  const eh_uso    = o.origem === 'uso';     // em uso, mas ninguém cadastrou
+  const nome = tipo==='tag' ? '#'+o.tag : o.nome;
+  const extra = tipo==='tag'
+    ? (o.titulo && o.titulo !== o.tag ? ` — ${esc(o.titulo)}` : '')
+    : (o.codigo ? ` <code>${esc(o.codigo)}</code>` : '');
+  const sel = tipo==='tag' ? o.tag : o.nome;
+  return `<div class="vrow">
+    <span class="vnome"><b>${esc(nome)}</b>${extra}
+      <span style="color:var(--muted)"> · ${o.usos} nota(s)</span></span>
+    ${eh_perfil ? '<span class="vtag">perfil</span>'
+      : eh_uso ? '<span class="vtag novo">fora do vocabulário</span>'
+               : '<span class="vtag">seu</span>'}
+    ${eh_uso ? `<button class="bnav" style="padding:2px 8px"
+        onclick="opVocab(${q(tipo==='tag'?'add_tag':'add_area')},${q(sel)})">＋ adotar</button>` : ''}
+    ${(!eh_perfil && !eh_uso) ? `<button class="bnav" style="padding:2px 8px"
+        onclick="opVocab(${q(tipo==='tag'?'rm_tag':'rm_area')},${q(sel)})" title="tira da lista; nenhuma nota é alterada">✕</button>` : ''}
+    ${(tipo==='area' && o.usos>0) ? `<button class="bnav" style="padding:2px 8px"
+        onclick="mocDaArea(${q(sel)})" title="cria o MOC desta área no vault">🏛️ MOC</button>` : ''}
+  </div>`;
+}
+function _pintarVocab(d){
+  const semVoc = d.areas.filter(a=>a.origem==='uso').length
+               + d.tags.filter(t=>t.origem==='uso').length;
+  vsovInfo.innerHTML = `<b>${d.areas.length}</b> área(s) · <b>${d.tags.length}</b> tema(s)`
+    + (semVoc ? ` — <span style="color:var(--warn)">${semVoc} em uso fora do vocabulário</span>` : '')
+    + `<br><span style="opacity:.7">arquivo: ${esc(d.arquivo)}</span>`;
+  vAreas.innerHTML = d.areas.map(a=>_linhaVocab(a,'area')).join('');
+  vTags.innerHTML = d.tags.length ? d.tags.map(t=>_linhaVocab(t,'tag')).join('')
+    : '<div class="dica">Nenhum tema ainda. Crie o primeiro abaixo — ou preencha <code>tags:</code> numa ficha e adote aqui.</div>';
+  if(d.problemas && d.problemas.length){
+    vsovAviso.hidden = false;
+    vsovAviso.innerHTML = d.problemas.map(esc).join('<br>');
+  } else { vsovAviso.hidden = true; }
+}
+async function carregarVocab(){
+  _pintarVocab(await (await fetch('/api/vocabulario')).json());
+}
+async function opVocab(op, valor, extra){
+  const body = Object.assign({op, valor}, extra||{});
+  const r = await (await fetch('/api/vocabulario',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)})).json();
+  if(r.estado) _pintarVocab(r.estado);
+  if(!r.ok){ vsovAviso.hidden=false; vsovAviso.textContent = r.msg || 'não consegui gravar'; }
+  VOCAB = await (await fetch('/api/vocab')).json();   // o form das fichas segue junto
+}
+async function addVocab(op){
+  if(op === 'add_area'){
+    const v = vAreaNova.value.trim();
+    if(!v) return;
+    await opVocab(op, v); vAreaNova.value = '';
+  } else {
+    const v = vTagNova.value.trim();
+    if(!v) return;
+    await opVocab(op, v, {titulo: vTagTitulo.value.trim()});
+    vTagNova.value = ''; vTagTitulo.value = '';
+  }
+}
+async function mocDaArea(area){
+  const r = await (await fetch('/api/moc_novo',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({area, pasta: vault.value})})).json();
+  vsovAviso.hidden = false;
+  vsovAviso.textContent = (r.ok ? '✓ ' : '✗ ') + (r.msg || '');
+}
+
 /* ---------- fichas: slideover do grupo Qualidade ---------- */
 let VOCAB = null, FICHA_ARQ = '', F_CAMPOS = {};
-const F_SEL = {tipo_fonte:'tipos_fonte', tipo:'tipos', area:'areas',
+const F_SEL = {tipo_fonte:'tipos_fonte', tipo:'tipos',
                status:'status', confiabilidade:'confiabilidade'};
+/* Campos de LISTA com vocabulário: `area` sempre foi lista (o gravador
+   separa por ";") mas era desenhada como select de UM valor — obra de duas
+   áreas perdia a segunda em silêncio. Aqui viram texto + sugestões que
+   ligam/desligam com um clique. `tags` é o caso novo, e o vocabulário dele
+   é ABERTO: digitar um tema inédito é como se cadastra. */
+const F_MULTI = {area:'areas', tags:'tags'};
 function abrirFichas(){
   fsovBg.classList.add('on'); fsov.classList.add('on');
   FICHA_ARQ = '';
@@ -3691,9 +4056,60 @@ function campoFicha(c){
       ${foraVocab ? `<option value="${esc(v)}" selected>${esc(v)} (fora do vocabulário)</option>` : ''}
       ${ops.map(o=>`<option value="${esc(o)}"${o===v?' selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
   }
-  const extra = VOCAB.listas.includes(c) ? ' · vários? separe com ;' : '';
-  return `<div class="${cls}"><label>${esc(c)}${ast}${falta?' — <b>preencha</b>':''}</label>
+  if(F_MULTI[c]){
+    const ops = VOCAB[F_MULTI[c]] || [];
+    const atuais = v.split(';').map(x=>x.trim()).filter(Boolean);
+    const aberto = (c === 'tags');
+    const titulos = VOCAB.tags_titulo || {};
+    const chips = ops.map(o=>{
+      const on = atuais.includes(o);
+      const rot = (c==='tags' && titulos[o]) ? `${o} — ${titulos[o]}` : o;
+      return `<button type="button" class="chip${on?' on':''}" title="${esc(rot)}"
+        onclick="alternarValor(${q('f_'+c)},${q(o)})">${esc(o)}</button>`;
+    }).join('');
+    /* Valor que ninguém cadastrou não é escondido nem apagado: aparece na
+       caixa e ganha o convite a adotar — é assim que o vocabulário cresce. */
+    const novos = atuais.filter(x=>!ops.includes(x));
+    return `<div class="${cls}"><label>${esc(c)}${ast}${falta?' — <b>preencha</b>':''}
+        <span style="color:var(--muted);font-weight:400">· vários? separe com ;</span></label>
+      <input type="text" id="f_${esc(c)}" value="${esc(v)}" placeholder="(em branco = não mexe)">
+      ${ops.length ? `<div class="chips">${chips}</div>` : ''}
+      ${novos.length ? `<div class="dica">fora do vocabulário: ${novos.map(n=>
+          `<b>${esc(n)}</b> <button type="button" class="bnav" style="padding:1px 6px"
+             onclick="adotar(${q(c)},${q(n)})">＋ adotar</button>`).join(' · ')}</div>`
+        : (aberto && !ops.length
+           ? '<div class="dica">nenhum tema cadastrado ainda — digite o primeiro (minúsculas, sem acento; barra faz hierarquia: <i>planejamento/holding</i>)</div>'
+           : '')}
+    </div>`;
+  }
+  return `<div class="${cls}"><label>${esc(c)}${ast}${falta?' — <b>preencha</b>':''}
+      ${VOCAB.listas.includes(c) ? '<span style="color:var(--muted);font-weight:400">· vários? separe com ;</span>' : ''}</label>
     <input type="text" id="f_${esc(c)}" value="${esc(v)}" placeholder="(em branco = não mexe)"></div>`;
+}
+function alternarValor(campoId, valor){
+  const el = document.getElementById(campoId);
+  if(!el) return;
+  const atuais = el.value.split(';').map(x=>x.trim()).filter(Boolean);
+  const i = atuais.indexOf(valor);
+  if(i >= 0) atuais.splice(i, 1); else atuais.push(valor);
+  el.value = atuais.join('; ');
+  // preserva o resto do formulário antes de redesenhar os chips
+  document.querySelectorAll('#fichaForm [id^="f_"]').forEach(x=>{
+    F_CAMPOS[x.id.slice(2)] = x.value;
+  });
+  renderFicha();
+}
+async function adotar(campo, valor){
+  const op = (campo === 'tags') ? 'add_tag' : 'add_area';
+  const r = await (await fetch('/api/vocabulario',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({op, valor})})).json();
+  if(!r.ok){ alert('Não consegui adotar: ' + (r.msg||'')); return; }
+  VOCAB = await (await fetch('/api/vocab')).json();
+  document.querySelectorAll('#fichaForm [id^="f_"]').forEach(x=>{
+    F_CAMPOS[x.id.slice(2)] = x.value;
+  });
+  renderFicha();
 }
 function campoReferencia(){
   const v = (F_CAMPOS.referencia_abnt || '').trim();
@@ -3717,7 +4133,7 @@ function campoReferencia(){
 function renderFicha(){
   const tf = F_CAMPOS.tipo_fonte || '';
   const obrig = (VOCAB.obrigatorios[tf] || []);
-  const fixos = ['tipo_fonte','tipo','area','status','confiabilidade','resumo'];
+  const fixos = ['tipo_fonte','tipo','area','tags','status','confiabilidade','resumo'];
   const campos = [...fixos, ...obrig.filter(c=>!fixos.includes(c)), 'referencia_abnt'];
   fichaForm.innerHTML =
     (tf ? `<p class="sov-dica">obrigatórios de <b>${esc(tf)}</b>: ${obrig.map(esc).join(', ') || '—'}</p>`

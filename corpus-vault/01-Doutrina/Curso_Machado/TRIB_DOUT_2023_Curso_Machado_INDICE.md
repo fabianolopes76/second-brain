@@ -7,6 +7,7 @@ tipo: Doutrina
 tipo_fonte: livro
 status: Vigente
 confiabilidade: Doutrinária
+tags: [obrigacao-tributaria, credito-tributario]
 partes: 2
 ---
 # Curso

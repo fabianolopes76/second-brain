@@ -16,7 +16,13 @@ Arquitetura: NÚCLEO × PERFIL.
     O perfil `juridico` é o primeiro; contemplar outra área do conhecimento
     = escrever outro perfil, não refatorar o pipeline.
 
-Zero dependências externas (stdlib). Zero I/O — só dados e funções puras.
+Zero dependências externas (stdlib). Zero I/O PRÓPRIA — só dados e funções
+puras. A exceção declarada: o vocabulário que o usuário cria (áreas e tags)
+é lido UMA vez, no import, pelo `vocabulario.py` — que é quem toca o disco.
+Ele é mesclado nos aliases de módulo logo abaixo das tabelas do perfil, e é
+por isso que todo consumidor (normalizar, gerar_moc, painel, analisar_nome)
+enxerga as áreas do usuário sem precisar mudar uma linha.
+
 Autoteste: `python3 taxonomia.py --autoteste`.
 """
 
@@ -26,6 +32,7 @@ import sys
 from typing import NamedTuple
 
 import comum
+import vocabulario
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NÚCLEO — invariante entre domínios
@@ -207,6 +214,13 @@ class Perfil(NamedTuple):
     # mesmo citadas por poucas obras, com título amigável. A chave usa o
     # MESMO (rotulo, numero) que identificadores() extrai (número só dígitos).
     normas_notaveis: dict = {}         # (rotulo, numero) → título humano
+    # Tags de partida do domínio: slug → título humano. O eixo TEMÁTICO do
+    # acervo (o `tags:` do frontmatter), que o conectar.py usa como segunda
+    # via de correlação — obra que não cita norma nenhuma só se liga por
+    # aqui. Vazio no jurídico de propósito: tema é curadoria de quem lê, e
+    # quem cadastra é o usuário (vocabulario.py). O perfil existe para o
+    # caso de um domínio nascer com uma ontologia pronta.
+    tags: dict = {}                    # slug → título humano
 
 
 PERFIS = {
@@ -392,8 +406,6 @@ def _inverter(d):
 # Aliases de módulo — os consumidores usam taxonomia.AREAS etc.; a indireção
 # do perfil custa esta linha e torna o segundo domínio um acréscimo.
 TIPOS = PERFIL_ATIVO.tipos
-AREAS = PERFIL_ATIVO.areas
-CODIGO_AREA = PERFIL_ATIVO.codigo_area
 CODIGO_TIPO = PERFIL_ATIVO.codigo_tipo
 TIPOS_POR_FONTE = PERFIL_ATIVO.tipos_por_fonte
 STATUS = PERFIL_ATIVO.status
@@ -404,8 +416,65 @@ PASTAS_PUBLICACAO = PERFIL_ATIVO.pastas_publicacao
 PADROES_IDENTIFICADOR = PERFIL_ATIVO.padroes_identificador
 PASTAS_POR_AREA = PERFIL_ATIVO.pastas_por_area
 FONTES_POR_TIPO = _inverter(TIPOS_POR_FONTE)
-AREA_POR_CODIGO = _inverter(CODIGO_AREA)
 TIPO_POR_CODIGO = _inverter(CODIGO_TIPO)
+
+
+def _mesclar_usuario(perfil, voc):
+    """Perfil + vocabulário do usuário → (AREAS, CODIGO_AREA, TAGS). Pura.
+
+    O perfil é a BASE e vence sempre: área do usuário homônima de uma
+    canônica é absorvida (não duplica), e código já ocupado pelo núcleo é
+    redirecionado — o autoteste exige código único, e um código repetido
+    faria uma área sumir do round-trip CODIGO_AREA ↔ AREA_POR_CODIGO.
+
+    Cada área entra com DUAS chaves de busca: o próprio nome sem acento e
+    cada sinônimo — porque `normalizar_yaml.areas_de()` itera as CHAVES por
+    substring, e é isso que faz a inferência por prosa achar a área nova.
+    """
+    areas = dict(perfil.areas)
+    codigo_area = dict(perfil.codigo_area)
+    tags = dict(perfil.tags)
+    canonicas = {v.casefold(): v for v in perfil.areas.values()}
+
+    for a in voc.get("areas", []):
+        nome, codigo = a["nome"], a["codigo"]
+        ja = canonicas.get(nome.casefold())
+        if ja is not None:
+            nome = ja                       # o perfil vence o nome
+        else:
+            if codigo in set(codigo_area.values()):
+                codigo = vocabulario.derivar_codigo(nome,
+                                                    set(codigo_area.values()))
+            codigo_area[nome] = codigo
+            canonicas[nome.casefold()] = nome
+        for chave in [comum.sem_acento(nome).lower()] + a["sinonimos"]:
+            areas.setdefault(chave, nome)
+
+    for t in voc.get("tags", []):
+        tags[t["tag"]] = t["titulo"] or t["tag"]
+    return areas, codigo_area, tags
+
+
+VOCABULARIO_USUARIO, VOCABULARIO_PROBLEMAS = vocabulario.ler()
+AREAS, CODIGO_AREA, TAGS = _mesclar_usuario(PERFIL_ATIVO, VOCABULARIO_USUARIO)
+AREA_POR_CODIGO = _inverter(CODIGO_AREA)   # DEPOIS do merge, nunca antes
+
+
+def recarregar_usuario():
+    """Relê o vocabulário do usuário e refaz os aliases. → problemas.
+
+    Os scripts do pipeline não precisam disto (cada um importa fresco, num
+    processo novo). Quem precisa é o PAINEL, que vive por horas: sem isto,
+    cadastrar uma área só valeria depois de reiniciar o servidor — e o
+    `<select>` do formulário continuaria mostrando a lista velha.
+    """
+    global VOCABULARIO_USUARIO, VOCABULARIO_PROBLEMAS
+    global AREAS, CODIGO_AREA, TAGS, AREA_POR_CODIGO
+    VOCABULARIO_USUARIO, VOCABULARIO_PROBLEMAS = vocabulario.ler()
+    AREAS, CODIGO_AREA, TAGS = _mesclar_usuario(PERFIL_ATIVO,
+                                                VOCABULARIO_USUARIO)
+    AREA_POR_CODIGO = _inverter(CODIGO_AREA)
+    return VOCABULARIO_PROBLEMAS
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -509,6 +578,34 @@ def analisar_nome(nome):
     return r
 
 
+def pasta_segura(nome: str, prefixo_escape: str = "pasta") -> str:
+    """Texto livre → nome de pasta que NÃO pode machucar o vault.
+
+    Existe porque duas coisas do frontmatter viram diretório: a área
+    (`publicar.destino_de`) e o nome resumido da obra (`pasta_da_obra`).
+    Enquanto o vocabulário de áreas era fechado, a área crua era segura por
+    acidente; com o usuário criando áreas, "Civil / Família" viraria dois
+    níveis e "../x" escaparia do vault.
+
+    Duas garantias:
+      1. mesmo slug que nomeia os ARQUIVOS (`comum.prefixo_fatia`) — a
+         pasta não admite caractere que o arquivo dentro dela não admita,
+         e barra/ponto-ponto não sobrevivem a ele;
+      2. nenhum nome que APAGUE o conteúdo dos scanners: `IGNORAR_PASTAS` é
+         testado contra TODO componente do caminho (comum.py), e
+         `RELATORIO`/`_`/`.` são os prefixos que todo varredor pula.
+
+    As 16 áreas do perfil jurídico atravessam INALTERADAS (o acento é `\\w`
+    em Python 3) — nenhum vault existente muda de forma por causa disto.
+    """
+    limpo = comum.prefixo_fatia(str(nome or ""))
+    if (not limpo or limpo in comum.IGNORAR_PASTAS
+            or limpo.startswith((".", "_"))
+            or limpo.upper().startswith("RELATORIO")):
+        return f"{prefixo_escape}-{limpo}" if limpo else f"{prefixo_escape}-sem-nome"
+    return limpo
+
+
 def pasta_da_obra(stem: str) -> str:
     """Nome RESUMIDO da obra — a pasta própria dela dentro da categoria.
 
@@ -526,17 +623,7 @@ def pasta_da_obra(stem: str) -> str:
     base = (f'{n["titulo"]}_{n["autor"]}' if n["titulo"] and n["autor"]
             else _SUFIXO_FATIA.sub("", stem[:-3] if stem.lower().endswith(".md")
                                    else stem))
-    # Mesmo slug que nomeia os ARQUIVOS (comum.prefixo_fatia): a pasta não
-    # pode admitir caractere que o arquivo dentro dela não admite.
-    nome = comum.prefixo_fatia(base)
-    # Nomes que apagariam a obra do acervo ou confundiriam os scanners:
-    # IGNORAR_PASTAS é testado contra TODO componente do caminho (comum.py),
-    # e `RELATORIO`/`_`/`.` são os prefixos que todo varredor pula.
-    if (not nome or nome in comum.IGNORAR_PASTAS
-            or nome.startswith((".", "_"))
-            or nome.upper().startswith("RELATORIO")):
-        nome = f"obra-{nome}" if nome else "obra-sem-nome"
-    return nome
+    return pasta_segura(base, prefixo_escape="obra")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -655,6 +742,55 @@ def _autoteste():
         ok(p not in comum.IGNORAR_PASTAS and not p.startswith((".", "_"))
            and not p.upper().startswith("RELATORIO") and p,
            f"pasta venenosa não foi neutralizada: {venenoso!r} → {p!r}")
+
+    # pasta_segura: a ÁREA vira diretório — nenhum valor pode escapar do
+    # vault, e nenhuma das 16 áreas atuais pode mudar de forma (isso
+    # remexeria vault publicado).
+    for area in set(PERFIL_ATIVO.areas.values()):
+        ok(pasta_segura(area) == area,
+           f"área do perfil mudou de forma na sanitização: {area!r} → "
+           f"{pasta_segura(area)!r}")
+    for mau, esperado in (("../fuga", "fuga"), ("Civil / Família",
+                                                "Civil-Família"),
+                          ("Radar", "pasta-Radar"), ("", "pasta-sem-nome"),
+                          ("...", "pasta-sem-nome")):
+        ok(pasta_segura(mau) == esperado,
+           f"pasta_segura({mau!r}) = {pasta_segura(mau)!r}, esperado {esperado!r}")
+        ok("/" not in pasta_segura(mau) and ".." not in pasta_segura(mau),
+           f"pasta_segura deixou passar travessia: {mau!r}")
+
+    # ── vocabulário do usuário: as invariantes têm de sobreviver ao merge ──
+    _voc = {"areas": [
+                {"nome": "Direito Digital", "codigo": "DIG",
+                 "sinonimos": ["tecnolog"]},
+                {"nome": "Tributário", "codigo": "XPTO", "sinonimos": []},
+                {"nome": "Colide", "codigo": "TRIB", "sinonimos": []}],
+            "tags": [{"tag": "lgpd", "titulo": "LGPD e dados pessoais"},
+                     {"tag": "prescricao", "titulo": ""}]}
+    m_areas, m_cod, m_tags = _mesclar_usuario(PERFIL_ATIVO, _voc)
+    ok(m_cod.get("Direito Digital") == "DIG",
+       f"área do usuário não entrou: {m_cod.get('Direito Digital')}")
+    ok(m_areas.get("tecnolog") == "Direito Digital",
+       "sinônimo do usuário não virou chave de busca (a inferência por "
+       "prosa do normalizar_yaml depende disso)")
+    ok(m_areas.get("direito digital") == "Direito Digital",
+       "o próprio nome tinha de virar chave de busca")
+    # área homônima de canônica: absorvida, e o perfil vence o código
+    ok(m_cod["Tributário"] == "TRIB",
+       f"perfil tinha de vencer no código: {m_cod['Tributário']}")
+    # código já ocupado pelo núcleo: desviado, nunca sobrescrito
+    ok(m_cod["Colide"] != "TRIB" and m_cod["Tributário"] == "TRIB",
+       f"colisão de código roubou o código do núcleo: {m_cod['Colide']}")
+    # as MESMAS invariantes de antes, agora depois do merge
+    ok(set(m_cod) == set(m_areas.values()),
+       "após o merge, codigo_area não cobre exatamente as áreas canônicas")
+    ok(len(set(m_cod.values())) == len(m_cod),
+       f"após o merge há código duplicado: {sorted(m_cod.values())}")
+    _inv = _inverter(m_cod)
+    for area, cod in m_cod.items():
+        ok(_inv[cod] == area, f"round-trip pós-merge falhou: {area}↔{cod}")
+    ok(m_tags["lgpd"] == "LGPD e dados pessoais" and m_tags["prescricao"] == "prescricao",
+       f"tags do usuário: {m_tags}")
 
     if erros:
         for e in erros:

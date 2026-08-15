@@ -49,13 +49,38 @@ from comum import (CONECTAR_FIM, CONECTAR_INI, IGNORAR_PASTAS,
 PASTA_CONEXOES = Path("00-Indices-MOCs") / "Conexoes"
 ARQ_CACHE = ".conectar_cache.json"
 ARQ_CATALOGO = Path("00-Indices-MOCs") / "CATALOGO.md"
+ARQ_VOCABULARIO = Path("00-Indices-MOCs") / "VOCABULARIO.md"
 ARQ_RELATORIO = "RELATORIO-CONEXOES.md"
 
 # nome de arquivo do hub: estável pelo identificador, nunca pelo apelido
 # (renomear o título na taxonomia não pode quebrar wikilink)
+# `tag` é o SEGUNDO eixo (tema); não confundir com `tema`, que já é o Tema
+# repetitivo do STJ/STF em taxonomia.padroes_identificador.
 ROTULO_ARQUIVO = {"lei": "Lei", "decreto": "Decreto", "mp": "MP",
                   "emenda": "EC", "tema": "Tema", "sumula": "Sumula",
-                  "processo": "Processo"}
+                  "processo": "Processo", "tag": "Tag"}
+
+# Rótulo do eixo temático. Uma obra sem NENHUM identificador de norma só se
+# conecta por aqui — é o que o relatório chamava de "isolada" e prometia à
+# "fase Temas".
+ROTULO_TAG = "tag"
+
+
+def ids_das_tags(fm) -> Counter:
+    """As `tags:` da obra viram identificadores de primeira classe.
+
+    Entram no MESMO espaço dos identificadores de norma, e de propósito:
+    daí saem de graça o peso por raridade (IDF), o corte da tag ubíqua
+    (df > N/2 não pontua relação — o lugar dela é o hub) e a eleição de hub
+    por difusão. Peso 1 por obra, não por menção: tag é curadoria
+    deliberada, não frequência de citação.
+    """
+    c = Counter()
+    for t in (fm.get("tags") or []):
+        t = str(t).strip()
+        if t:
+            c[(ROTULO_TAG, t)] += 1
+    return c
 
 
 def contar_ids(texto: str) -> Counter:
@@ -72,8 +97,10 @@ def contar_ids(texto: str) -> Counter:
 
 def fmt_ident(ident) -> str:
     """(lei, 10833) → 'Lei 10.833' — pontuação de milhar na exibição
-    (o processo CNJ fica como está)."""
+    (o processo CNJ fica como está). (tag, prescricao) → '#prescricao'."""
     rotulo, num = ident
+    if rotulo == ROTULO_TAG:
+        return f"#{num}"          # a forma que o Obsidian reconhece e linka
     if rotulo == "processo" or len(num) <= 3:
         return radar.rotular(ident)
     pontuado = ""
@@ -85,7 +112,10 @@ def fmt_ident(ident) -> str:
 
 
 def hub_stem(ident) -> str:
-    return f"{ROTULO_ARQUIVO.get(ident[0], ident[0].capitalize())}-{ident[1]}"
+    # Tag hierárquica ("planejamento/holding") tem barra: no nome de arquivo
+    # ela viraria subpasta. O nível vira hífen — o hub é um só.
+    valor = str(ident[1]).replace("/", "-") if ident[0] == ROTULO_TAG else ident[1]
+    return f"{ROTULO_ARQUIVO.get(ident[0], ident[0].capitalize())}-{valor}"
 
 
 def _alias(fm: dict, stem: str) -> str:
@@ -167,6 +197,10 @@ def obras_do_vault(vault: Path, cache: dict, usar_cache=True):
                           [[r, n, c] for (r, n), c in sorted(ids.items())]]
             soltas.append((alvo, p.stem, ids))
         else:
+            # A OBRA carrega o eixo temático; a fatia, não (fatiar.py não
+            # herda `tags` de propósito — tema é da obra). Some aqui, e não
+            # em contar_ids, porque tag vem do frontmatter, não do texto.
+            ids.update(ids_das_tags(fm))
             cache[rel] = [st.st_mtime_ns, st.st_size, "nota", "", []]
             obras[p.stem] = {"path": p, "fm": fm, "texto": texto,
                              "ids": Counter(ids), "fatias": {}}
@@ -215,12 +249,21 @@ def correlacionar(obras: dict, top: int, min_peso: float):
 
 def hubs_elegiveis(obras: dict, df: Counter) -> dict:
     """ident → título. Corte por difusão (≥ max(4, 10% das obras)) OU
-    norma notável do perfil (marco ganha hub mesmo com poucas citações)."""
+    norma notável do perfil (marco ganha hub mesmo com poucas citações).
+
+    Tag cadastrada no vocabulário com título humano é o análogo temático da
+    norma notável: quem se deu ao trabalho de nomear o tema quer o hub —
+    então ela usa o título cadastrado, e não o `#slug`."""
     corte = max(4, math.ceil(0.10 * max(1, len(obras))))
     notaveis = taxonomia.PERFIL_ATIVO.normas_notaveis
     hubs = {}
     for ident, n in df.items():
         chave = (ident[0], ident[1])
+        if ident[0] == ROTULO_TAG:
+            titulo = taxonomia.TAGS.get(ident[1])
+            if n >= corte or (titulo and titulo != ident[1]):
+                hubs[ident] = titulo or fmt_ident(ident)
+            continue
         if n >= corte or chave in notaveis:
             hubs[ident] = notaveis.get(chave) or fmt_ident(ident)
     return hubs
@@ -242,12 +285,12 @@ def bloco_relacoes(stem: str, obras: dict, rels: dict, hubs: dict) -> str:
         return ""
     corpo = [CONECTAR_INI, "## 🔗 Relações (auto)", ""]
     if linhas:
-        corpo += ["Obras deste vault que compartilham normas e precedentes "
-                  "com esta:", ""] + linhas
+        corpo += ["Obras deste vault que compartilham normas, precedentes e "
+                  "temas com esta:", ""] + linhas
     if marcos:
         if linhas:
             corpo.append("")
-        corpo.append("Marcos citados: "
+        corpo.append("Marcos e temas: "
                      + " · ".join(f"[[{hub_stem(h)}]]" for h in marcos))
     corpo.append(CONECTAR_FIM)
     return "\n".join(corpo)
@@ -281,9 +324,16 @@ def aplicar_bloco(ob: dict, bloco: str, dry: bool) -> str:
 
 def corpo_hub_bloco(ident, citantes, obras) -> str:
     """citantes = [(stem_obra, mencoes)] já ordenado por menções desc."""
-    linhas = [CONECTAR_INI, f"## Obras que citam ({len(citantes)})", ""]
+    # Norma se CITA (e a contagem de menções ranqueia); tema se ATRIBUI —
+    # contar "1 menção" numa tag seria ruído com cara de dado.
+    eh_tag = ident[0] == ROTULO_TAG
+    titulo = ("Obras com este tema" if eh_tag else "Obras que citam")
+    linhas = [CONECTAR_INI, f"## {titulo} ({len(citantes)})", ""]
     for stem, mencoes in citantes:
         ob = obras[stem]
+        if eh_tag:
+            linhas.append(f"- [[{stem}|{_alias(ob['fm'], stem)}]]")
+            continue
         precisao = [s for s, c in sorted(
             ob["fatias"].items(),
             key=lambda kv: (-kv[1].get(ident, 0), kv[0]))
@@ -328,15 +378,20 @@ def gerar_hub(vault, ident, titulo, obras, stems_vault, dry) -> tuple:
                 return "falha", f"{stem} — {e.strerror or e}"
         return "atualizado", stem
 
+    eh_tag = ident[0] == ROTULO_TAG
     titulo_fm = str(titulo).replace('"', "'")
-    conteudo = "\n".join([
-        "---",
-        f'titulo: "{titulo_fm}"',
-        "tipo: MOC",
-        f'hub_id: "{ident[0]}:{ident[1]}"',
-        'finalidade: "Hub de conexão — obras que citam esta norma/precedente '
-        '(gerado por conectar.py)"',
-        "---",
+    cab = ["---", f'titulo: "{titulo_fm}"', "tipo: MOC",
+           f'hub_id: "{ident[0]}:{ident[1]}"']
+    if eh_tag:
+        # O hub carrega a própria tag: clicar nela no painel de tags do
+        # Obsidian traz o hub junto das obras — a porta de entrada do tema.
+        cab.append(f"tags: [{ident[1]}]")
+    cab.append('finalidade: "Hub de conexão — '
+               + ("obras que compartilham este tema" if eh_tag
+                  else "obras que citam esta norma/precedente")
+               + ' (gerado por conectar.py)"')
+    cab.append("---")
+    conteudo = "\n".join(cab + [
         "",
         f"# {titulo}",
         "",
@@ -344,8 +399,8 @@ def gerar_hub(vault, ident, titulo, obras, stems_vault, dry) -> tuple:
         "",
         "## Notas (curadoria manual)",
         "",
-        "_Anote aqui a sua leitura desta norma — o conectar.py nunca toca "
-        "fora dos marcadores._",
+        f"_Anote aqui a sua leitura {'deste tema' if eh_tag else 'desta norma'}"
+        " — o conectar.py nunca toca fora dos marcadores._",
         ""])
     if not dry:
         try:
@@ -389,7 +444,14 @@ def gerar_catalogo(vault, obras, df, dry) -> str:
         ref = str(fm.get("referencia_abnt") or "").strip()
         if ref:
             L.append(f"- referência: {ref}")
-        raras = sorted(ob["ids"], key=lambda x: (df[x], -ob["ids"][x], x))[:10]
+        # Os temas em linha própria: o catálogo é "o mapa que uma IA lê
+        # primeiro" e era cego a tema — quem procura por assunto (e não por
+        # número de lei) não tinha por onde entrar.
+        temas = [t for t in (fm.get("tags") or []) if str(t).strip()]
+        if temas:
+            L.append("- temas: " + ", ".join(f"#{t}" for t in temas))
+        raras = sorted((x for x in ob["ids"] if x[0] != ROTULO_TAG),
+                       key=lambda x: (df[x], -ob["ids"][x], x))[:10]
         if raras:
             L.append("- normas mais distintivas: "
                      + ", ".join(fmt_ident(x) for x in raras))
@@ -409,11 +471,92 @@ def gerar_catalogo(vault, obras, df, dry) -> str:
     return "gravado"
 
 
+def gerar_vocabulario(vault, obras, df, hubs, dry) -> str:
+    """A nota-espelho do vocabulário, dentro do vault.
+
+    O vocabulário vive num JSON fora do vault (vocabulario.py) porque o
+    pipeline inteiro precisa dele antes de existir vault. Mas vocabulário
+    que só existe em config é vocabulário que ninguém consulta na hora de
+    catalogar — então ele se espelha aqui, com a CONTAGEM DE USO ao lado de
+    cada termo: é o que transforma a lista numa ferramenta de curadoria
+    ("holding tem 1 uso e planejamento/holding tem 12 — unifique").
+
+    É a nota "Tags-Canônicas" que o roteiro do projeto pede desde o começo.
+    Regenerável: não tem marcador de curadoria, é reescrita inteira.
+    """
+    areas_uso, tags_uso = Counter(), Counter()
+    for ob in obras.values():
+        for a in (ob["fm"].get("area") or []):
+            if str(a).strip():
+                areas_uso[str(a)] += 1
+        for t in (ob["fm"].get("tags") or []):
+            if str(t).strip():
+                tags_uso[str(t)] += 1
+
+    canonicas = sorted(set(taxonomia.AREAS.values()) | set(areas_uso))
+    L = ["---", 'titulo: "Vocabulário do acervo"', "tipo: MOC",
+         'finalidade: "Áreas e temas em uso, com contagem (gerado por '
+         'conectar.py)"', "---", "",
+         "# 🗂️ Vocabulário do acervo", "",
+         "> Gerado por `conectar.py` — **regenerável, não edite**. Para "
+         "criar, renomear ou remover termos, use o painel "
+         "(**01 · Configuração → 🏷️ Vocabulário**). Termo *fora do "
+         "vocabulário* não some de painel nenhum: é só um convite a adotar "
+         "ou corrigir, para o acervo não se fragmentar em sinônimos.", "",
+         f"## 📐 Áreas ({len(canonicas)})", ""]
+    for a in canonicas:
+        n = areas_uso.get(a, 0)
+        marca = "" if a in set(taxonomia.AREAS.values()) else "  ⚠ fora do vocabulário"
+        cod = taxonomia.CODIGO_AREA.get(a)
+        L.append(f"- **{a}**{f' `{cod}`' if cod else ''} — "
+                 f"{n} obra(s){marca}")
+
+    todas_tags = sorted(set(taxonomia.TAGS) | set(tags_uso))
+    L += ["", f"## 🏷️ Temas ({len(todas_tags)})", ""]
+    if not todas_tags:
+        L.append("_Nenhum tema ainda. Cadastre no painel e preencha `tags:` "
+                 "nas fichas — é o eixo que conecta obras que não citam as "
+                 "mesmas normas._")
+    for t in todas_tags:
+        n = tags_uso.get(t, 0)
+        titulo = taxonomia.TAGS.get(t)
+        hub = hub_stem((ROTULO_TAG, t)) if (ROTULO_TAG, t) in hubs else ""
+        partes = [f"- **#{t}**"]
+        if titulo and titulo != t:
+            partes.append(f"— {titulo}")
+        partes.append(f"— {n} obra(s)")
+        if hub:
+            partes.append(f"— hub: [[{hub}]]")
+        if t not in taxonomia.TAGS:
+            partes.append("⚠ fora do vocabulário")
+        L.append(" ".join(partes))
+
+    L += ["", "## 🔎 Navegar por tema", "",
+          "```dataview", 'TABLE WITHOUT ID file.link AS "Obra", '
+          'tipo AS "Tipo", area AS "Área", tags AS "Temas"',
+          'FROM -"99-Templates"', "WHERE tags AND !parte",
+          "SORT file.name ASC", "```", ""]
+
+    conteudo = "\n".join(L)
+    destino = vault / ARQ_VOCABULARIO
+    try:
+        if destino.exists() and destino.read_text(
+                encoding="utf-8", errors="replace") == conteudo:
+            return "ja"
+        if not dry:
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            destino.write_text(conteudo, encoding="utf-8")
+    except OSError as e:
+        return f"falha: {e.strerror or e}"
+    return "gravado"
+
+
 # ---------------------------------------------------------------------------
 # Orquestração
 # ---------------------------------------------------------------------------
 def conectar(vault: Path, dry=False, top=8, min_peso=2.0, sem_hubs=False,
-             sem_relacoes=False, sem_catalogo=False, sem_cache=False) -> int:
+             sem_relacoes=False, sem_catalogo=False, sem_cache=False,
+             sem_vocabulario=False) -> int:
     modo = "DRY-RUN — nada gravado" if dry else "execução efetiva"
     print(f"\n{'=' * 72}\nCONECTAR — {vault}  ({modo})\n{'=' * 72}", flush=True)
 
@@ -490,7 +633,18 @@ def conectar(vault: Path, dry=False, top=8, min_peso=2.0, sem_hubs=False,
         else:
             r[f"catalogo_{res}"] += 1
 
-    # obras sem nenhum identificador: só a fase de temas as conecta
+    # ── vocabulário (espelho navegável de áreas e temas) ──
+    if not sem_vocabulario:
+        res = gerar_vocabulario(vault, obras, df, hubs, dry)
+        if res.startswith("falha"):
+            r["falha_disco"] += 1
+            detalhes["falhas"].append(f"VOCABULARIO.md — {res[7:]}")
+        else:
+            r[f"vocabulario_{res}"] += 1
+
+    # Obra sem NENHUM identificador — nem norma, nem tema. Antes da v3.26 o
+    # tema não existia e isto era um beco sem saída; agora a saída é
+    # preencher `tags:` na ficha.
     for stem in sorted(obras):
         if not obras[stem]["ids"]:
             detalhes["isoladas"].append(stem)
@@ -504,14 +658,16 @@ def conectar(vault: Path, dry=False, top=8, min_peso=2.0, sem_hubs=False,
                ("hub_ja", "hubs já atualizados"),
                ("catalogo_gravado", "catálogo gravado"),
                ("catalogo_ja", "catálogo inalterado"),
+               ("vocabulario_gravado", "vocabulário gravado"),
+               ("vocabulario_ja", "vocabulário inalterado"),
                ("falha_disco", "falhas de disco"))
     print()
     for chave, rotulo in rotulos:
         if r[chave]:
             print(f"{rotulo:26}: {r[chave]}")
     for stem in detalhes["isoladas"]:
-        print(f"    ⚠ isolada (0 identificadores): {stem} — atribua temas "
-              "(fase Temas por IA) para conectá-la")
+        print(f"    ⚠ isolada (0 identificadores): {stem} — preencha `tags:` "
+              "na ficha (mesa ✎ Fichas) para conectá-la por tema")
     for c in detalhes["colisoes"]:
         print(f"    ✗ {c}")
     for o in detalhes["obsoletos"]:
@@ -538,7 +694,7 @@ def conectar(vault: Path, dry=False, top=8, min_peso=2.0, sem_hubs=False,
         if not vistos:
             L.append("- (nenhum par acima do corte)")
         if detalhes["hubs"] or r["hub_ja"]:
-            L += ["", "## Hubs de norma (00-Indices-MOCs/Conexoes/)", ""]
+            L += ["", "## Hubs de norma e tema (00-Indices-MOCs/Conexoes/)", ""]
             L += [f"- {h}" for h in detalhes["hubs"]]
             if r["hub_ja"]:
                 L.append(f"- {r['hub_ja']} hub(s) já atualizados")
@@ -549,9 +705,11 @@ def conectar(vault: Path, dry=False, top=8, min_peso=2.0, sem_hubs=False,
             L += ["", "## ✗ Colisões (nada foi sobrescrito)", ""]
             L += [f"- {c}" for c in detalhes["colisoes"]]
         if detalhes["isoladas"]:
-            L += ["", "## ⚠ Obras isoladas (sem identificadores)", "",
-                  "Só a atribuição de temas conecta estas — fase Temas "
-                  "por IA:", ""] + [f"- [[{s}]]" for s in detalhes["isoladas"]]
+            L += ["", "## ⚠ Obras isoladas (sem norma nem tema)", "",
+                  "Estas não citam norma nenhuma e não têm `tags:` — "
+                  "preencha os temas na ficha (mesa ✎ Fichas) e rode o "
+                  "Conectar de novo:", ""] \
+                 + [f"- [[{s}]]" for s in detalhes["isoladas"]]
         if detalhes["falhas"]:
             L += ["", "## ✗ Falhas de disco (re-rode o Conectar)", ""]
             L += [f"- {f}" for f in detalhes["falhas"]]
@@ -588,6 +746,7 @@ def main():
     ap.add_argument("--sem-hubs", action="store_true")
     ap.add_argument("--sem-relacoes", action="store_true")
     ap.add_argument("--sem-catalogo", action="store_true")
+    ap.add_argument("--sem-vocabulario", action="store_true")
     ap.add_argument("--sem-cache", action="store_true",
                     help="ignora e reconstrói o cache de varredura")
     a = ap.parse_args()
@@ -596,7 +755,8 @@ def main():
         sys.exit(f"ERRO: não encontrei {vault}")
     sys.exit(conectar(vault, dry=a.dry, top=a.top, min_peso=a.min_peso,
                       sem_hubs=a.sem_hubs, sem_relacoes=a.sem_relacoes,
-                      sem_catalogo=a.sem_catalogo, sem_cache=a.sem_cache))
+                      sem_catalogo=a.sem_catalogo, sem_cache=a.sem_cache,
+                      sem_vocabulario=a.sem_vocabulario))
 
 
 if __name__ == "__main__":

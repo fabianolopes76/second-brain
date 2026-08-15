@@ -13,11 +13,38 @@ dela é a taxonomia; se precisa ler arquivo, é do chamador.
 """
 
 import re
+import unicodedata
 
 # Um campo de frontmatter "vazio" para fins de validação: ausente, string
 # em branco (inclusive só espaços), lista vazia ou o literal null.
 def vazio(v) -> bool:
     return v is None or v == [] or str(v).strip() in ("", "null")
+
+
+def sem_acento(s: str) -> str:
+    """'Tributário' → 'Tributario'. Base de todo slug e de toda busca
+    por substring que não pode depender de o usuário digitar o acento."""
+    n = unicodedata.normalize("NFKD", str(s))
+    return "".join(c for c in n if not unicodedata.combining(c))
+
+
+def tag_valida(s: str) -> str:
+    """'Hugo de Brito Machado' → 'hugo-de-brito-machado'.
+
+    A forma que o Obsidian aceita em `tags:` do frontmatter: minúscula, sem
+    acento, sem espaço. A BARRA sobrevive de propósito — é ela que dá a tag
+    hierárquica (`planejamento/holding`), que o Obsidian aninha sozinho no
+    painel de tags. Morava no normalizar_yaml.py; subiu porque o vocabulário,
+    o conectar e o painel precisam da MESMA regra (tag que difere por um
+    acento é uma segunda tag, e o acervo se fragmenta em silêncio).
+    """
+    s = sem_acento(s).lower()
+    s = re.sub(r"[^a-z0-9/]+", "-", s)
+    s = re.sub(r"-{2,}", "-", s)
+    # Cada nível é limpo por si: "Planejamento / Holding" tem espaços em
+    # volta da barra, e sem isto viraria "planejamento-/-holding" — três
+    # níveis quebrados no painel de tags do Obsidian em vez de dois.
+    return "/".join(p for p in (x.strip("-") for x in s.split("/")) if p)
 
 
 # Pastas do vault que NÃO são notas do acervo: templates (placeholders),

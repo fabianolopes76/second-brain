@@ -71,7 +71,11 @@ def destino_de(fm, stem):
         if isinstance(areas, str):
             areas = [areas]
         if areas:
-            rel = rel / str(areas[0])
+            # A área vira DIRETÓRIO. Enquanto o vocabulário era fechado ela
+            # era segura por acidente; com áreas criadas pelo usuário,
+            # "Civil / Família" viraria dois níveis e "../x" escaparia do
+            # vault. As 16 áreas do perfil atravessam inalteradas.
+            rel = rel / taxonomia.pasta_segura(str(areas[0]), "area")
     return rel, ""
 
 

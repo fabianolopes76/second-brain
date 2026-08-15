@@ -261,12 +261,18 @@ python3 gerar_moc.py vault/ --area Processual --nome MOC-Processo-Civil \
 
 # FASE 5+ · auditoria do GRAFO do vault (depois de publicar no Obsidian)
 python3 auditar_vault.py 4-OBSIDIAN-VAULT/ --detalhado
-python3 conectar.py 4-OBSIDIAN-VAULT/ --dry     # plano de conexões (relações + hubs + catálogo)
+python3 conectar.py 4-OBSIDIAN-VAULT/ --dry     # plano (relações + hubs + catálogo + vocabulário)
 python3 conectar.py 4-OBSIDIAN-VAULT/           # grava (blocos conectar:auto, regeneráveis)
+# DOIS eixos de relação: normas/precedentes citados no TEXTO e temas (`tags:`)
+# da ficha — obra que não cita norma nenhuma só se liga pelo tema. Tema
+# difundido vira hub (Conexoes/Tag-<tema>.md), como a norma. Gera também
+# 00-Indices-MOCs/VOCABULARIO.md (áreas e temas com contagem). --sem-vocabulario
+# e --sem-catalogo desligam cada peça.
 # Erros = nota fora do grafo ou INVISÍVEL nos painéis (fatia órfã, partes:
 # inconsistente, tipo/status fora do vocabulário, sem area, par tipo/tipo_fonte
 # incoerente, nome duplicado). Avisos = higiene (wikilink quebrado, área sem
-# MOC, nome fora do padrão). Gera RELATORIO-VAULT.md no vault; exit 1 se erro.
+# MOC, tag fora do vocabulário, nome fora do padrão). Gera RELATORIO-VAULT.md
+# no vault; exit 1 se erro.
 
 # FASE 6 · radar — o Cowork (Módulo E) alimenta Radar/; a correlação é por regra
 python3 radar.py 4-OBSIDIAN-VAULT/              # fila de revisão (não altera notas)
@@ -322,6 +328,39 @@ ACERVO_ESTRITO=1 python3 auditar_acervo.py 3-MARKDOWN-LIMPO/
    - Notas-índice têm `partes:`; fatias têm `parte:` + `obra:` — os painéis filtram `!parte` para listar obras, não pedaços.
    - `area` é lista (`[Tributário]`); `tipo`, `status` e `confiabilidade` usam o vocabulário do perfil (ver `taxonomia.py`). **Valor fora do vocabulário = nota some do painel.**
    - Nome de arquivo: `[AREA]_[TIPO]_[ANO]_[Titulo-Curto]_[Autor].md` (códigos em `taxonomia.CODIGO_AREA/CODIGO_TIPO`; fatias = mesmo prefixo + `_pNN`, índice + `_INDICE`). Desse nome sai também a **pasta da obra** (`taxonomia.pasta_da_obra` → `Titulo-Curto_Autor`) — nomear direito no bruto organiza o vault de graça.
+   - `tags` é o eixo **temático**, só na nota-índice (fatia não herda): é o que liga obras que não citam as mesmas normas, e o que o Obsidian indexa no painel de tags.
+
+## Vocabulário: as áreas e os temas são seus
+
+O perfil traz 16 áreas jurídicas de partida, mas o vocabulário **não é
+fechado**: no painel, **01 · Configuração → 🏷️ Áreas e temas** cria a área que
+faltava e os temas (`tags`) do seu acervo.
+
+```bash
+python3 vocabulario.py                # mostra o vocabulário atual e onde ele mora
+python3 vocabulario.py --autoteste
+```
+
+- **Onde mora**: `~/.config/acervo/vocabulario.json` (ou `ACERVO_VOCABULARIO=/caminho`).
+  A `taxonomia.py` o mescla **uma vez, no import** — por isso todo script do
+  pipeline (normalizar, auditar, gerar_moc, publicar) e o `<select>` do painel
+  enxergam as suas áreas sem nenhuma alteração de código.
+- **Área nova ganha código automático** (`Direito Digital` → `DIR`), único
+  contra os do perfil e os seus — é ele que entra no nome do arquivo
+  (`DIR_DOUT_2024_...`). A área também vira **pasta** no vault, então passa por
+  `taxonomia.pasta_segura`: nome com barra ou `..` nunca escapa do vault.
+- **Régua**: valor fora do vocabulário **avisa, nunca reprova**. O
+  `normalizar_yaml` e o `auditar_vault` listam o que está em uso e não foi
+  cadastrado; o painel oferece **＋ adotar** ao lado de cada um. É assim que o
+  vocabulário cresce sem virar um saco de sinônimos (`holding`, `holdings`,
+  `Holding`).
+- **Tema (`tags`)**: minúsculas, sem acento, barra faz hierarquia
+  (`planejamento/holding`) — a forma que o Obsidian aninha sozinho. Duas obras
+  que compartilham um tema raro ficam **relacionadas** no `conectar.py`, e um
+  tema difundido vira **nota-hub** em `00-Indices-MOCs/Conexoes/Tag-<tema>.md`,
+  como já acontece com o CTN. O `conectar.py` também gera
+  `00-Indices-MOCs/VOCABULARIO.md`: áreas e temas com contagem de uso,
+  navegável dentro do Obsidian.
 
 ## Guia do desenvolvedor
 
@@ -355,8 +394,9 @@ taxonomia.py
 
 ```bash
 python3 taxonomia.py --autoteste     # integridade interna dos vocabulários/perfis
+python3 vocabulario.py --autoteste   # saneamento/persistência do vocabulário do usuário
 
-# Oráculo de regressão: o corpus/ (18 fixtures) cobre o que os parsers antigos
+# Oráculo de regressão: o corpus/ (19 fixtures) cobre o que os parsers antigos
 # quebravam. Capture ANTES de mexer, diffe DEPOIS:
 python3 validar_yaml_abnt.py corpus --gerar > /tmp/antes.txt 2>&1
 # ... sua alteração ...
@@ -365,11 +405,22 @@ python3 validar_yaml_abnt.py corpus --gerar 2>&1 | diff /tmp/antes.txt -
 
 # idem para: auditar_acervo.py corpus / normalizar_yaml.py corpus --dry /
 #            fatiar.py corpus -o /tmp/f --min-palavras 500
-# grafo do vault: corpus-vault/ tem 5 erros + 5 avisos PLANTADOS de propósito
+# grafo do vault: corpus-vault/ tem 5 erros PLANTADOS de propósito
 python3 auditar_vault.py corpus-vault --detalhado   # deve sair com rc=1
+
+# Independência de CAMINHO (o vault é lido por rglob + wikilink por nome, nunca
+# por pasta). Prove com dois clones do mesmo fixture, um plano e um aninhado:
+cp -r corpus-vault /tmp/v-aninhado && cp -r corpus-vault /tmp/v-plano
+(cd /tmp/v-plano/01-Doutrina && mv */*.md . && rmdir */)
+python3 auditar_vault.py /tmp/v-plano --detalhado >/dev/null
+python3 auditar_vault.py /tmp/v-aninhado --detalhado >/dev/null
+diff <(sed 's/v-plano/V/' /tmp/v-plano/RELATORIO-VAULT.md) \
+     <(sed 's/v-aninhado/V/' /tmp/v-aninhado/RELATORIO-VAULT.md)   # tem de ser vazio
 ```
 > Ao rodar auditores sobre os corpus, use `--relatorio /tmp/...` — o padrão
-> grava o relatório DENTRO da pasta auditada e polui o oráculo.
+> grava o relatório DENTRO da pasta auditada e polui o oráculo. E note que
+> `RELATORIO-VAULT.md` está no `.gitignore`: **`git diff` nele nunca acusa
+> nada** — compare com `diff` contra uma captura sua, como acima.
 
 Filosofia de severidade: **rigor novo entra como AVISO** (a primeira rodada é censo, não portão); promova aviso→erro por tipo, quando o backlog daquele tipo zerar. `ACERVO_ESTRITO=1` mostra o futuro sem mudar o presente.
 

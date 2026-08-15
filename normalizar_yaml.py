@@ -32,7 +32,6 @@ import argparse
 import re
 import shutil
 import sys
-import unicodedata
 from pathlib import Path
 
 import comum
@@ -40,30 +39,21 @@ import frontmatter
 import taxonomia
 import validar_yaml_abnt
 
-# Vocabulário controlado de áreas — fonte única: o perfil ativo da taxonomia.
-# (A antiga cópia local tinha inclusive uma chave morta, "econômic", que o
-# sem_acento() duplicava em "economic".)
-AREAS = taxonomia.AREAS
+# Slug e remoção de acento vivem no comum.py: o vocabulario.py, o conectar.py
+# e o painel precisam da MESMA regra de tag (ver comum.tag_valida).
+sem_acento = comum.sem_acento
+tag_valida = comum.tag_valida
 
 
-def sem_acento(s: str) -> str:
-    n = unicodedata.normalize("NFKD", s)
-    return "".join(c for c in n if not unicodedata.combining(c))
-
-
-def tag_valida(s: str) -> str:
-    """'Hugo de Brito Machado' -> 'hugo-de-brito-machado' (tag válida no Obsidian)."""
-    s = sem_acento(str(s)).lower()
-    s = re.sub(r"[^a-z0-9/]+", "-", s)      # a barra sobrevive: permite tag/hierárquica
-    s = re.sub(r"-{2,}", "-", s).strip("-")
-    return s
-
-
+# Vocabulário de áreas — fonte única: o perfil ativo da taxonomia MAIS o que
+# o usuário cadastrou. Lido a cada chamada, nunca fotografado no import: o
+# painel recarrega o vocabulário em processo (taxonomia.recarregar_usuario),
+# e uma cópia local aqui mostraria a lista velha depois de criar uma área.
 def areas_de(texto: str):
     """Extrai as áreas canônicas de uma descrição em prosa."""
     base = sem_acento(str(texto)).lower()
     achadas = []
-    for chave, canon in AREAS.items():
+    for chave, canon in taxonomia.AREAS.items():
         if sem_acento(chave) in base and canon not in achadas:
             achadas.append(canon)
     return achadas
@@ -119,7 +109,8 @@ def normalizar(texto: str):
         if chave == "area" and valor:
             atual = como_lista(valor)
             # se já é lista de termos canônicos, não mexe
-            if all(a in AREAS.values() for a in atual) and valor.startswith("["):
+            if all(a in taxonomia.AREAS.values() for a in atual) \
+                    and valor.startswith("["):
                 novas.append(f"area: {fmt_lista(atual, aspas=False)}")
             else:
                 canon = areas_de(" ".join(atual)) or areas_de(valor)
@@ -184,6 +175,17 @@ def normalizar(texto: str):
     if tp and tp not in taxonomia.TIPOS and tp != "MOC":
         mud.append(f"⚠ tipo fora do vocabulário: '{tp}' "
                    f"(válidos: {', '.join(taxonomia.TIPOS)})")
+    # tags: o vocabulário é do USUÁRIO, então aqui só AVISA — quem escreveu
+    # a tag pode estar cadastrando um tema novo (botão "adotar" no painel) ou
+    # pode ter errado a digitação. Bloquear seria travar o fluxo; calar seria
+    # deixar `holding`, `holdings` e `Holding` virarem três temas distintos.
+    fora_voc = [t for t in como_lista(_valor_de("tags") or "[]")
+                if t and t not in taxonomia.TAGS]
+    if fora_voc:
+        mud.append(f"⚠ tags fora do vocabulário ({len(fora_voc)}): "
+                   + ", ".join(fora_voc[:5])
+                   + ("…" if len(fora_voc) > 5 else "")
+                   + " — adote no painel (01 · Vocabulário) ou corrija")
     # `tipo` vazio + tipo_fonte inequívoco (legislacao→Legislação) = derivável
     # sem inventar nada. Sem `tipo` a nota NÃO TEM ROTA de publicação e some
     # dos painéis do MOC; onde o mapa admite mais de um, quem decide é o refino.

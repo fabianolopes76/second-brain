@@ -5,6 +5,108 @@ Todas as mudanças relevantes do projeto, por versão. O formato segue
 [semântico](https://semver.org/lang/pt-BR/): MAIOR.MENOR.CORREÇÃO.
 Cada versão corresponde a uma tag git (`git tag -l`).
 
+## [3.26.0] — 2026-08-15 · Vocabulário aberto — as áreas viram suas, e o tema vira eixo
+
+Duas lacunas com a mesma causa: o vocabulário do acervo era **fechado e
+imutável**.
+
+As 16 áreas jurídicas estavam cravadas em `taxonomia.py` — criar "Direito
+Digital" exigia editar código-fonte, e o painel nem deixava: o `<select>` da
+ficha vinha da lista fixa, e os validadores da IA e do radar **descartavam**
+qualquer área fora dela.
+
+`tags` era pior: um **campo órfão**. Existia um normalizador de formato, uma
+linha em `_CAMPOS_LISTA`, um predicado Dataview no `MOC-Processo-Civil` e uma
+fixture. Sem vocabulário, sem validação, **sem campo no painel** (o formulário
+nunca renderizava `tags`), sem geração e sem correlação. Era o único campo de
+conteúdo sem taxonomia atrás.
+
+O custo aparecia no `conectar.py`, que documentava o buraco em três lugares:
+obra que não cita norma nenhuma saía como **"isolada"**, com a promessa de uma
+"fase Temas" que nunca foi escrita. E o roteiro do projeto pedia desde o começo
+um "dicionário de tags controlado (uma nota Tags-Canônicas)" que nunca existiu.
+
+### Adicionado
+
+- **`vocabulario.py`** — o vocabulário que o usuário cria. Stdlib pura, e o
+  **único** módulo que toca o disco nessa história (`comum.py:10-13` já mandava
+  o recado: vocabulário mora na taxonomia, I/O é do chamador). Vive em
+  `~/.config/acervo/vocabulario.json` (ou `ACERVO_VOCABULARIO`), em arquivo
+  **separado** do `config.json` de propósito — o `carregar_config()` descarta
+  toda chave que não seja string, e um vocabulário aninhado ali seria comido em
+  silêncio. Escrita atômica (`tmp` + `replace`): no 9p do WSL2, vocabulário
+  truncado é pior que nenhum, some área do painel sem ninguém notar. É a única
+  fronteira, então é aqui que tudo é saneado — nada é descartado sem virar uma
+  linha em `problemas`.
+- **`taxonomia.pasta_segura(nome)`** — texto livre → nome de pasta que não
+  machuca o vault, extraída da guarda que o `pasta_da_obra` já tinha.
+- **`taxonomia.TAGS`** e o campo `tags` no `Perfil` (vazio no jurídico: tema é
+  curadoria de quem lê). **`taxonomia.recarregar_usuario()`** — o painel vive
+  por horas; sem isso, cadastrar uma área só valeria depois de reiniciar.
+- **Tela 🏷️ Vocabulário** no painel (01 · Configuração): áreas e temas, com
+  **contagem de uso** ao lado de cada termo — é a contagem que deixa decidir
+  entre adotar um termo novo e corrigir um erro de digitação. Termo em uso que
+  ninguém cadastrou aparece com **＋ adotar**; área criada oferece **🏛️ MOC**.
+- **`conectar.gerar_vocabulario()`** → `00-Indices-MOCs/VOCABULARIO.md`: o
+  espelho navegável dentro do Obsidian, com painel Dataview por tema. É a nota
+  "Tags-Canônicas" que o roteiro pedia. `--sem-vocabulario` desliga.
+- `corpus/19_tags_multilinha.md` — fixture para o caminho `tags` em bloco
+  multi-linha, implementado desde sempre e **nunca coberto**; é onde o parser
+  devolve lista vazia em silêncio se os itens vierem sem aspas.
+
+### Alterado
+
+- **`taxonomia.py`** mescla o vocabulário do usuário **uma vez, no import**,
+  nos aliases de módulo. É o que faz `normalizar_yaml`, `gerar_moc`,
+  `auditar_vault`, `analisar_nome` e o `<select>` do painel enxergarem as áreas
+  novas **sem uma linha de alteração própria** — inclusive nos subprocessos. O
+  perfil vence sempre: área homônima é absorvida, código já ocupado é desviado.
+  A linha "Zero I/O" da docstring foi corrigida com honestidade, não contornada.
+- **Régua do vocabulário aberto: avisa, nunca reprova.** `normalizar_yaml` e
+  `auditar_vault` passam a censar `tags` — e o aviso é **global, uma linha por
+  tag**, não por nota: 200 avisos idênticos ensinam a não ler o relatório
+  (mesma lição das fatias retidas do `publicar.py`). Ao contrário de
+  `tipo`/`status`, tag desconhecida não esconde a nota de painel nenhum; o
+  risco é a fragmentação silenciosa, que se enxerga na **contagem**.
+- **`conectar.py` ganha o 2º eixo**: as `tags:` da obra entram como
+  identificadores de primeira classe, no mesmo espaço das normas. Daí saem de
+  graça o peso por raridade, o corte da tag ubíqua (`df > N/2` não pontua
+  relação — o lugar dela é o hub) e a eleição de hub por difusão. Tema
+  cadastrado com título é o análogo temático da "norma notável". Hubs em
+  `Conexoes/Tag-<tema>.md` — rótulo `tag`, **não** `tema`, que já é o Tema
+  repetitivo do STJ/STF. O `CATALOGO.md` deixa de ser cego a temas.
+- **Ficha do painel**: `tags` finalmente é editável, e `area` — que sempre foi
+  campo-lista mas era desenhada como `<select>` de UM valor, perdendo a segunda
+  área em silêncio — vira multi-valor junto. Os dois ganham os termos do
+  vocabulário em botões que ligam/desligam.
+- **Fluxo de IA**: `tags` entra no prompt e no validador. Régua deliberadamente
+  diferente — tipo e área a IA escolhe da lista fechada; **tema novo é aceito**
+  e sinalizado, porque é assim que o eixo temático nasce. O `if k == "area"`
+  cravado no validador virou `if k in _CAMPOS_LISTA`.
+- **`comum.py`** recebe `sem_acento()` e `tag_valida()` (eram do
+  `normalizar_yaml`): o vocabulário, o conectar e o painel precisam da MESMA
+  regra de tag. `tag_valida` foi corrigida de passagem — `"Planejamento /
+  Holding"` virava `planejamento-/-holding`, três níveis quebrados no painel de
+  tags do Obsidian em vez de dois.
+- **`publicar.py`**: a área passa por `pasta_segura`. Ela vira **diretório**, e
+  enquanto o vocabulário era fechado isso era seguro por acidente; com áreas
+  livres, `"Civil / Família"` viraria dois níveis e `"../x"` escaparia do
+  vault. As 16 áreas atuais atravessam **inalteradas** — nenhum vault muda.
+- **Custo do painel**: o censo de uso é cacheado por assinatura de `stat`, pula
+  fatia antes do stat e **não varre o vault**. Medimos: no vault real (Dropbox
+  sobre 9p do WSL2) a varredura custava **85 s** na primeira chamada e 23 s nas
+  seguintes; restrita às fichas locais, **1,6 ms**. E é redundante — o que está
+  no vault veio daqui, e o legado já tem censo próprio no `RELATORIO-VAULT.md`
+  e no `VOCABULARIO.md`.
+
+### Corrigido na documentação
+
+`corpus-vault/RELATORIO-VAULT.md` está no `.gitignore` — **`git diff` nele
+nunca acusa nada**. O README agora diz isso e traz o oráculo que de fato prova
+a independência de caminho do vault (a promessa da v3.25.0): dois clones do
+mesmo fixture, um plano e um aninhado, e `diff` entre os dois relatórios — que
+sai vazio.
+
 ## [3.25.0] — 2026-08-15 · Uma pasta por obra — o vault deixa de ser uma lista chapada
 
 O `publicar.py` despejava **todas** as notas de **todas** as obras direto na pasta
